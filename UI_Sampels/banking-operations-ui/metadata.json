@@ -1,0 +1,5 @@
+{
+  "name": "Banking Operations UI",
+  "description": "A mobile banking operations screen with spending chart and transaction list.",
+  "requestFramePermissions": []
+}

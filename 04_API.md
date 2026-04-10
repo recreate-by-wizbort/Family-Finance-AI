@@ -46,7 +46,7 @@ VITE_OPENROUTER_API_KEY=sk-or-ТВОЙ_КЛЮЧ_ЗДЕСЬ
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 // Для CRA: process.env.REACT_APP_OPENROUTER_API_KEY
 
-const MODEL = "google/gemma-3-27b-it:free";
+const MODEL = "google/gemma-4-26b-a4b-it:free";
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // Системный промпт — задаёт роль и ограничения AI-помощника

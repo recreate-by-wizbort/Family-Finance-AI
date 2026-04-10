@@ -1,43 +1,450 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
 import UzsAmount from '../components/UzsAmount'
+import { CATEGORIES, TRANSACTIONS } from '../mockData.js'
+import { getExpensesByCategory, getMonthTransactions, getTotalExpenses } from '../utils.js'
 import { isSessionUnlocked } from '../utils/sessionLock'
 
-const anomalies = [
-  { title: 'Кафе и рестораны', delta: '+38%', amount: '+18 400', icon: 'restaurant' },
-  { title: 'Такси', delta: '+26%', amount: '+9 100', icon: 'local_taxi' },
-  { title: 'Подписки', delta: '+14%', amount: '+3 200', icon: 'subscriptions' },
-]
+function toMonthLabel(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number)
+  const date = new Date(year, month - 1, 1)
+  const monthLabel = new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(date)
+  return monthLabel[0].toUpperCase() + monthLabel.slice(1)
+}
 
-const categoryStats = [
-  { name: 'Еда', value: 72, amount: '72 000', color: 'bg-[#4cd6fb]' },
-  { name: 'Транспорт', value: 56, amount: '56 000', color: 'bg-[#58d6f1]' },
-  { name: 'Подписки', value: 42, amount: '42 000', color: 'bg-[#7de7ff]' },
-  { name: 'Развлечения', value: 34, amount: '34 000', color: 'bg-[#36c5f0]' },
-]
+function toMonthDate(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number)
+  return new Date(year, month - 1, 1)
+}
 
-const familyLoad = [
-  { member: 'Андрей', share: 44, amount: '103 200' },
-  { member: 'Мария', share: 31, amount: '72 400' },
-  { member: 'Сын', share: 17, amount: '39 500' },
-  { member: 'Дочь', share: 8, amount: '19 000' },
-]
+function roundPercent(value) {
+  return Math.round(value * 10) / 10
+}
 
-const goals = [
-  { title: 'Подушка безопасности', progress: 63, targetPrefix: 'До цели:', targetAmount: '560 000' },
-  { title: 'Отпуск в августе', progress: 41, targetPrefix: 'До цели:', targetAmount: '220 000' },
-  { title: 'Сюрприз-цель', progress: 78, targetText: 'Дата раскрытия: 8 марта' },
-]
+function pointOnCircle(cx, cy, radius, angleDeg) {
+  const radians = ((angleDeg - 90) * Math.PI) / 180
+  return {
+    x: cx + Math.cos(radians) * radius,
+    y: cy + Math.sin(radians) * radius,
+  }
+}
+
+function describeArcPath(cx, cy, radius, startAngle, endAngle) {
+  const start = pointOnCircle(cx, cy, radius, startAngle)
+  const end = pointOnCircle(cx, cy, radius, endAngle)
+  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0
+
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`
+}
+
+function isMobileDevice() {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  const ua = navigator.userAgent || ''
+  const mobileUA = /Android|iPhone|iPad|iPod|Mobile|Windows Phone|webOS|BlackBerry/i.test(ua)
+  const ipadDesktopUA = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1
+
+  return mobileUA || ipadDesktopUA
+}
+
+const CATEGORY_ICON_MAP = {
+  groceries: 'shopping_cart',
+  transport: 'directions_bus',
+  restaurants: 'lunch_dining',
+  subscriptions: 'subscriptions',
+  entertainment: 'movie',
+  clothes: 'checkroom',
+  shopping: 'shopping_bag',
+  health: 'favorite',
+  car: 'directions_car',
+  internal: 'swap_horiz',
+  family: 'groups',
+  income: 'payments',
+  other: 'more_horiz',
+}
+
+const MAIN_RING_RADIUS = 99
+const MAIN_RING_STROKE_WIDTH = 34
+const ICON_GLYPH_SIZE = Math.round(MAIN_RING_STROKE_WIDTH * 0.6)
+const DONUT_HOLE_SIZE = 164
+const SIDE_PREVIEW_SIZE = 204
+const SIDE_PREVIEW_OFFSET = -153
+const SIDE_RING_MASK = 'radial-gradient(circle, transparent 0 73px, #000 74px 101px, transparent 102px)'
+const MONTH_SWITCH_DURATION_MS = 150
 
 export default function MonitoringPage() {
   const isUnlocked = isSessionUnlocked()
 
-  const totalSpent = isUnlocked ? '234 100' : '••••••'
-  const monthGrowth = isUnlocked ? '+12.4%' : '•••'
-  const forecastAmount = isUnlocked ? '308 000' : null
+  const expenseTransactions = useMemo(
+    () => TRANSACTIONS.filter((transaction) => transaction.kind === 'purchase' || transaction.kind === 'subscription'),
+    [],
+  )
+
+  const monthKeys = useMemo(() => {
+    const unique = new Set(expenseTransactions.map((transaction) => transaction.timestamp.slice(0, 7)))
+    return Array.from(unique).sort()
+  }, [expenseTransactions])
+
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(Math.max(monthKeys.length - 1, 0))
+
+  const useSwipeNavigation = useMemo(() => isMobileDevice(), [])
+  const transitionFrameRef = useRef(null)
+  const transitionTimeoutRef = useRef(null)
+  const [ringTransition, setRingTransition] = useState(null)
+
+  useEffect(() => {
+    return () => {
+      if (transitionFrameRef.current != null) {
+        cancelAnimationFrame(transitionFrameRef.current)
+      }
+
+      if (transitionTimeoutRef.current != null) {
+        clearTimeout(transitionTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const monthSnapshots = useMemo(() => {
+    return monthKeys.map((monthKey) => {
+      const monthDate = toMonthDate(monthKey)
+      const transactions = getMonthTransactions(expenseTransactions, monthDate)
+      const total = getTotalExpenses(transactions)
+      const totalsByCategory = getExpensesByCategory(transactions)
+
+      const segments = Object.entries(totalsByCategory)
+        .map(([category, amount]) => ({
+          category,
+          amount,
+          share: (amount / (total || 1)) * 100,
+          percent: roundPercent((amount / (total || 1)) * 100),
+          label: CATEGORIES[category]?.label || category,
+          color: CATEGORIES[category]?.color || '#4cd6fb',
+          emoji: CATEGORIES[category]?.emoji || '•',
+          icon: CATEGORY_ICON_MAP[category] || CATEGORY_ICON_MAP.other,
+        }))
+        .sort((a, b) => b.amount - a.amount)
+
+        const metrics = (() => {
+          const ringSegments = segments.filter((segment) => segment.share >= 4)
+
+          if (!isUnlocked || ringSegments.length === 0) {
+            return []
+          }
+
+          const chartSize = 320
+          const center = chartSize / 2
+          const arcRadius = MAIN_RING_RADIUS
+          const gapSize = ringSegments.length > 8 ? 0.45 : 0.7
+          let cursor = 0
+
+          return ringSegments.map((segment) => {
+            const start = cursor
+            const end = Math.min(100, cursor + segment.share)
+            cursor = end
+
+            const halfGap = segment.share > gapSize * 1.7 ? gapSize / 2 : 0
+            const paintedStart = start + halfGap
+            const paintedEnd = end - halfGap
+            const arcStart = Math.max(0, Math.min(paintedStart, paintedEnd))
+            const arcEnd = Math.max(arcStart + 0.15, Math.max(paintedStart, paintedEnd))
+
+            const centerPercent = arcStart + (arcEnd - arcStart) / 2
+            const centerAngleDeg = centerPercent * 3.6
+
+            const labelRadius = 146
+            const iconRadius = MAIN_RING_RADIUS
+            const labelPoint = pointOnCircle(center, center, labelRadius, centerAngleDeg)
+
+            const startAngleDeg = arcStart * 3.6
+            const endAngleDeg = arcEnd * 3.6
+            const iconSize = ICON_GLYPH_SIZE
+            const iconAngleDeg = endAngleDeg - 0.2
+            const iconPoint = pointOnCircle(center, center, iconRadius, iconAngleDeg)
+
+            return {
+              ...segment,
+              startDeg: startAngleDeg,
+              endDeg: endAngleDeg,
+              arcPath: describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg),
+              labelX: labelPoint.x,
+              labelY: labelPoint.y,
+              iconX: iconPoint.x,
+              iconY: iconPoint.y,
+              iconSize,
+              showPercent: true,
+              showIcon: true,
+              showArc: endAngleDeg - startAngleDeg >= 0.8,
+            }
+          })
+        })()
+
+      return {
+        key: monthKey,
+        label: toMonthLabel(monthKey),
+        date: monthDate,
+        transactions,
+        total,
+        segments,
+        metrics,
+      }
+    })
+  }, [monthKeys, expenseTransactions, isUnlocked])
+
+  const selectedSnapshot =
+    monthSnapshots[selectedMonthIndex] ?? {
+      key: '',
+      label: 'Месяц',
+      date: new Date(),
+      transactions: [],
+      total: 0,
+      segments: [],
+      metrics: [],
+    }
+
+  const previousSnapshot = monthSnapshots[selectedMonthIndex - 1] ?? null
+
+  const currentMonthTransactions = selectedSnapshot.transactions
+  const currentTotal = selectedSnapshot.total
+  const previousTotal = previousSnapshot?.total ?? 0
+  const monthChange =
+    previousTotal > 0 ? roundPercent(((currentTotal - previousTotal) / previousTotal) * 100) : 0
+
+  const chartSegments = selectedSnapshot.segments
+
+  const isTransitioning = ringTransition != null
+  const hasPrevMonth = selectedMonthIndex > 0
+  const hasNextMonth = selectedMonthIndex < monthKeys.length - 1
+  const canGoPrev = !isTransitioning && hasPrevMonth
+  const canGoNext = !isTransitioning && hasNextMonth
+  const showDesktopArrows = !useSwipeNavigation
+
+  const startMonthTransition = (targetIndex) => {
+    if (
+      ringTransition != null ||
+      targetIndex < 0 ||
+      targetIndex >= monthKeys.length ||
+      targetIndex === selectedMonthIndex
+    ) {
+      return
+    }
+
+    const direction = targetIndex > selectedMonthIndex ? -1 : 1
+    setRingTransition({
+      fromIndex: selectedMonthIndex,
+      toIndex: targetIndex,
+      direction,
+      active: false,
+    })
+
+    if (transitionFrameRef.current != null) {
+      cancelAnimationFrame(transitionFrameRef.current)
+    }
+
+    transitionFrameRef.current = requestAnimationFrame(() => {
+      transitionFrameRef.current = requestAnimationFrame(() => {
+        setRingTransition((current) => (current ? { ...current, active: true } : current))
+      })
+    })
+
+    if (transitionTimeoutRef.current != null) {
+      clearTimeout(transitionTimeoutRef.current)
+    }
+
+    transitionTimeoutRef.current = setTimeout(() => {
+      setSelectedMonthIndex(targetIndex)
+      setRingTransition(null)
+      transitionTimeoutRef.current = null
+    }, MONTH_SWITCH_DURATION_MS)
+  }
+
+  const goPrevMonth = () => {
+    if (!canGoPrev) {
+      return
+    }
+
+    startMonthTransition(selectedMonthIndex - 1)
+  }
+
+  const goNextMonth = () => {
+    if (!canGoNext) {
+      return
+    }
+
+    startMonthTransition(selectedMonthIndex + 1)
+  }
+
+  const swipeStartRef = useRef({ x: 0, y: 0, active: false })
+
+  const handleChartTouchStart = (event) => {
+    if (!useSwipeNavigation) {
+      return
+    }
+
+    const touch = event.changedTouches?.[0]
+
+    if (!touch) {
+      return
+    }
+
+    swipeStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      active: true,
+    }
+  }
+
+  const handleChartTouchEnd = (event) => {
+    if (!useSwipeNavigation || !swipeStartRef.current.active) {
+      return
+    }
+
+    const touch = event.changedTouches?.[0]
+
+    if (!touch) {
+      swipeStartRef.current.active = false
+      return
+    }
+
+    const deltaX = touch.clientX - swipeStartRef.current.x
+    const deltaY = touch.clientY - swipeStartRef.current.y
+    swipeStartRef.current.active = false
+
+    const horizontalThreshold = 44
+    const mostlyHorizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.2
+
+    if (Math.abs(deltaX) < horizontalThreshold || !mostlyHorizontal) {
+      return
+    }
+
+    if (deltaX < 0 && canGoNext) {
+      goNextMonth()
+      return
+    }
+
+    if (deltaX > 0 && canGoPrev) {
+      goPrevMonth()
+    }
+  }
+
+  const monthLabel = selectedSnapshot.label
+  const amountValue = isUnlocked ? String(Math.round(currentTotal)) : '•••••••'
+  const changeValue = isUnlocked ? `${monthChange >= 0 ? '+' : ''}${monthChange}%` : '•••%'
+
+  const visibleSegments = isUnlocked ? chartSegments : []
+  const recentOperations = isUnlocked
+    ? [...currentMonthTransactions].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 6)
+    : []
+
+  const transitionFromSnapshot = ringTransition
+    ? monthSnapshots[ringTransition.fromIndex] ?? selectedSnapshot
+    : null
+  const transitionToSnapshot = ringTransition
+    ? monthSnapshots[ringTransition.toIndex] ?? selectedSnapshot
+    : null
+
+  const transitionEase = useSwipeNavigation ? 'cubic-bezier(0.78, 0.02, 0.96, 0.32)' : 'linear'
+  const sidePreviewShift = ringTransition?.active ? ringTransition.direction * 74 : 0
+  const sidePreviewOpacity = ringTransition?.active ? 0.3 : 0.45
+  const sidePreviewTransition = `transform ${MONTH_SWITCH_DURATION_MS}ms ${transitionEase}, opacity ${MONTH_SWITCH_DURATION_MS}ms ${transitionEase}`
+
+  const renderRingLayer = (snapshot, layerKey, layerStyle) => {
+    const layerMetrics = snapshot?.metrics ?? []
+    const layerMonthLabel = snapshot?.label ?? 'Месяц'
+
+    return (
+      <div
+        key={layerKey}
+        className="absolute inset-0"
+        style={{
+          ...layerStyle,
+          willChange: 'transform, opacity',
+        }}
+      >
+        <svg className="absolute inset-0" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg">
+            <circle
+              cx="160"
+              cy="160"
+              r={MAIN_RING_RADIUS}
+              fill="none"
+              stroke="#15273a"
+              strokeOpacity="0.9"
+              strokeWidth={MAIN_RING_STROKE_WIDTH}
+            />
+
+          {layerMetrics.map((segment) =>
+            segment.showArc ? (
+              <path
+                key={`${layerKey}-arc-${segment.category}`}
+                d={segment.arcPath}
+                fill="none"
+                stroke={segment.color}
+                strokeWidth={MAIN_RING_STROKE_WIDTH}
+                strokeLinecap="round"
+                style={{ filter: `drop-shadow(0 0 10px ${segment.color}33)` }}
+              />
+            ) : null,
+          )}
+        </svg>
+
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#071425]"
+          style={{
+            height: `${DONUT_HOLE_SIZE}px`,
+            width: `${DONUT_HOLE_SIZE}px`,
+          }}
+        />
+
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="font-headline text-2xl font-extrabold text-[#d6e3ff]">{layerMonthLabel}</span>
+        </div>
+
+        {layerMetrics.map((segment) =>
+          segment.showPercent ? (
+            <div
+              key={`${layerKey}-percent-${segment.category}`}
+              className="absolute font-medium tracking-tight text-[#95a2b1]"
+              style={{
+                left: `${segment.labelX}px`,
+                top: `${segment.labelY}px`,
+                transform: 'translate(-50%, -50%)',
+                fontSize:
+                    segment.share >= 20
+                      ? 'clamp(14px, 1.7vw, 21px)'
+                      : 'clamp(12px, 1.45vw, 17.5px)',
+              }}
+            >
+              {segment.percent}%
+            </div>
+          ) : null,
+        )}
+
+        {layerMetrics.map((segment) =>
+          segment.showIcon ? (
+            <span
+              key={`${layerKey}-badge-${segment.category}`}
+              className="material-symbols-outlined absolute -translate-x-1/2 -translate-y-1/2"
+              style={{
+                left: `${segment.iconX}px`,
+                top: `${segment.iconY}px`,
+                fontSize: `${segment.iconSize}px`,
+                lineHeight: 1,
+                color: 'rgba(255,255,255,0.95)',
+                textShadow: '0 0 10px rgba(124, 214, 255, 0.45)',
+              }}
+            >
+              {segment.icon}
+            </span>
+          ) : null,
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-[#041329] pb-32 text-[#d6e3ff]" style={{ minHeight: '100dvh' }}>
+    <div className="min-h-screen overflow-x-hidden bg-[#041329] pb-32 text-[#d6e3ff]" style={{ minHeight: '100dvh' }}>
       <AppTopBar />
 
       <main className="mx-auto mt-20 max-w-5xl px-6 pb-32">
@@ -49,129 +456,216 @@ export default function MonitoringPage() {
 
         <section className="mb-8">
           <h1 className="mb-2 font-headline text-3xl font-extrabold tracking-tight">Мониторинг</h1>
-          <p className="text-sm text-[#bcc9ce]">Динамика трат, семейная нагрузка и прогресс целей в реальном времени</p>
+          <p className="text-sm text-[#bcc9ce]">
+            Динамика трат по месяцам с детальной структурой расходов
+          </p>
         </section>
 
-        <section className="mb-8 grid gap-4 md:grid-cols-3">
-          <article className="rounded-2xl bg-[#112036] p-5">
-            <p className="mb-2 text-xs uppercase tracking-wider text-[#bcc9ce]">Расходы за 30 дней</p>
-            <p className="text-2xl font-bold">
-              <UzsAmount as="span" value={totalSpent} />
-            </p>
-          </article>
+        <section className="mb-8 rounded-[32px] bg-[#0d1c32] p-6 md:p-8">
+          <div
+            className="relative mx-auto max-w-[620px]"
+            onTouchEnd={handleChartTouchEnd}
+            onTouchStart={handleChartTouchStart}
+            style={useSwipeNavigation ? { touchAction: 'pan-y' } : undefined}
+          >
+            {showDesktopArrows ? (
+              <>
+                <button
+                  aria-label="Предыдущий месяц"
+                  className={`absolute left-0 top-[38%] z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border transition-all md:-translate-x-1/2 ${
+                    canGoPrev
+                      ? 'border-[#4cd6fb]/25 bg-[#112036] text-[#4cd6fb] hover:bg-[#1c2a41] active:scale-95'
+                      : 'cursor-not-allowed border-[#27354c] bg-[#112036]/40 text-[#546074]'
+                  }`}
+                  disabled={!canGoPrev}
+                  onClick={goPrevMonth}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined">chevron_left</span>
+                </button>
 
-          <article className="rounded-2xl bg-[#112036] p-5">
-            <p className="mb-2 text-xs uppercase tracking-wider text-[#bcc9ce]">Рост к прошлому месяцу</p>
-            <p className="text-2xl font-bold text-[#ffb4ab]">{monthGrowth}</p>
-          </article>
+                <button
+                  aria-label="Следующий месяц"
+                  className={`absolute right-0 top-[38%] z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border transition-all md:translate-x-1/2 ${
+                    canGoNext
+                      ? 'border-[#4cd6fb]/25 bg-[#112036] text-[#4cd6fb] hover:bg-[#1c2a41] active:scale-95'
+                      : 'cursor-not-allowed border-[#27354c] bg-[#112036]/40 text-[#546074]'
+                  }`}
+                  disabled={!canGoNext}
+                  onClick={goNextMonth}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined">chevron_right</span>
+                </button>
+              </>
+              ) : null}
 
-          <article className="rounded-2xl bg-[#112036] p-5">
-            <p className="mb-2 text-xs uppercase tracking-wider text-[#bcc9ce]">Прогноз</p>
-            {isUnlocked ? (
-              <p className="text-sm font-semibold leading-relaxed text-[#d6e3ff]">
-                Ожидаемо: <UzsAmount as="span" value={forecastAmount} /> к концу месяца
+              {hasPrevMonth ? (
+                <div
+                  className="pointer-events-none absolute top-1/2 z-0"
+                  style={{
+                    left: `${SIDE_PREVIEW_OFFSET}px`,
+                    height: `${SIDE_PREVIEW_SIZE}px`,
+                    width: `${SIDE_PREVIEW_SIZE}px`,
+                    transform: `translateY(-50%) translateX(${sidePreviewShift}px)`,
+                    opacity: sidePreviewOpacity,
+                    transition: sidePreviewTransition,
+                  }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-full bg-[#6d7688]/65"
+                    style={{
+                      WebkitMask: SIDE_RING_MASK,
+                      mask: SIDE_RING_MASK,
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              {hasNextMonth ? (
+                <div
+                  className="pointer-events-none absolute top-1/2 z-0"
+                  style={{
+                    right: `${SIDE_PREVIEW_OFFSET}px`,
+                    height: `${SIDE_PREVIEW_SIZE}px`,
+                    width: `${SIDE_PREVIEW_SIZE}px`,
+                    transform: `translateY(-50%) translateX(${sidePreviewShift}px)`,
+                    opacity: sidePreviewOpacity,
+                    transition: sidePreviewTransition,
+                  }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-full bg-[#6d7688]/65"
+                    style={{
+                      WebkitMask: SIDE_RING_MASK,
+                      mask: SIDE_RING_MASK,
+                    }}
+                  />
+                </div>
+              ) : null}
+
+            <div
+              className="relative z-10 mx-auto mb-6 h-[320px] w-[320px]"
+            >
+              <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,_rgba(124,214,255,0.18)_0%,_rgba(7,18,34,0.02)_62%,_transparent_100%)] blur-xl" />
+
+              {ringTransition && transitionFromSnapshot
+                ? renderRingLayer(transitionFromSnapshot, 'ring-outgoing', {
+                    transform: ringTransition.active
+                      ? `translateX(${ringTransition.direction * 156}px) scale(0.92)`
+                      : 'translateX(0px) scale(1)',
+                    opacity: ringTransition.active ? 0 : 1,
+                    transition: `transform ${MONTH_SWITCH_DURATION_MS}ms ${transitionEase}, opacity ${MONTH_SWITCH_DURATION_MS}ms ${transitionEase}`,
+                  })
+                : null}
+
+              {ringTransition && transitionToSnapshot
+                ? renderRingLayer(transitionToSnapshot, 'ring-incoming', {
+                    transform: ringTransition.active
+                      ? 'translateX(0px) scale(1)'
+                      : `translateX(${-ringTransition.direction * 156}px) scale(0.92)`,
+                    opacity: ringTransition.active ? 1 : 0,
+                    transition: `transform ${MONTH_SWITCH_DURATION_MS}ms ${transitionEase}, opacity ${MONTH_SWITCH_DURATION_MS}ms ${transitionEase}`,
+                  })
+                : null}
+
+              {!ringTransition
+                ? renderRingLayer(selectedSnapshot, 'ring-current', {
+                    transform: 'translateX(0px) scale(1)',
+                    opacity: 1,
+                  })
+                : null}
+            </div>
+
+            <div className="mb-3 flex items-end justify-center gap-3 md:gap-4">
+              <h2 className="text-5xl font-extrabold leading-none tracking-tight text-[#d6e3ff] md:text-6xl">
+                <UzsAmount as="span" value={amountValue} />
+              </h2>
+              <p
+                className={`rounded-full border px-3 py-1 text-lg font-bold md:text-xl ${
+                  changeValue.startsWith('-') ? 'text-[#ffb4ab]' : 'text-[#58d6f1]'
+                }`}
+                style={{
+                  borderColor: changeValue.startsWith('-') ? 'rgba(255, 180, 171, 0.35)' : 'rgba(88, 214, 241, 0.35)',
+                  backgroundColor: changeValue.startsWith('-') ? 'rgba(255, 180, 171, 0.08)' : 'rgba(88, 214, 241, 0.08)',
+                }}
+              >
+                {changeValue}
               </p>
-            ) : (
-              <p className="text-sm font-semibold leading-relaxed text-[#d6e3ff]">Прогноз скрыт до разблокировки</p>
-            )}
-          </article>
-        </section>
+            </div>
 
-        <section className="mb-8 rounded-3xl bg-[#0d1c32] p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl font-bold">Аномалии</h2>
-            <span className="rounded-full bg-[#ffb4ab]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#ffb4ab]">
-              внимание
-            </span>
+            <p className="text-center text-xs uppercase tracking-[0.14em] text-[#869398]">
+              Сравнение с предыдущим месяцем
+            </p>
           </div>
 
-          <div className="space-y-4">
-            {anomalies.map((anomaly) => (
-              <div key={anomaly.title} className="flex items-center justify-between rounded-2xl bg-[#112036] p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#1c2a41]">
-                    <span className="material-symbols-outlined text-[#4cd6fb]">{anomaly.icon}</span>
+          {visibleSegments.length > 0 ? (
+            <div className="mt-8 grid gap-3 md:grid-cols-2">
+              {visibleSegments.map((segment) => (
+                <div
+                  key={segment.category}
+                  className="flex items-center justify-between gap-3 rounded-full border px-3 py-2"
+                  style={{
+                    borderColor: `${segment.color}55`,
+                    background: `linear-gradient(112deg, ${segment.color}33 0%, rgba(17,32,54,0.92) 62%)`,
+                  }}
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/20 text-base"
+                      style={{ backgroundColor: segment.color }}
+                    >
+                      {segment.emoji}
+                    </span>
+                    <span className="truncate text-base font-semibold text-[#d6e3ff]">{segment.label}</span>
                   </div>
-                  <div>
-                    <p className="font-semibold">{anomaly.title}</p>
-                    <p className="text-xs text-[#bcc9ce]">
-                      Дополнительный расход <UzsAmount as="span" value={isUnlocked ? anomaly.amount : '••••'} />
+
+                  <div className="shrink-0 text-right">
+                    <p className="text-base font-bold text-[#d6e3ff]">
+                      <UzsAmount as="span" value={String(Math.round(segment.amount))} />
+                    </p>
+                    <p className="text-[11px] font-medium tracking-wide text-[#9fb2c4]">{segment.percent}%</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-[32px] bg-[#0d1c32] p-6 md:p-8">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-xl font-bold">Операции месяца</h2>
+            <span className="text-xs uppercase tracking-[0.14em] text-[#869398]">{monthLabel}</span>
+          </div>
+
+          {recentOperations.length > 0 ? (
+            <div className="space-y-3">
+              {recentOperations.map((operation) => {
+                const categoryMeta = CATEGORIES[operation.category] || {}
+
+                return (
+                  <div
+                    key={operation.id}
+                    className="flex items-center justify-between rounded-2xl bg-[#112036] px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-semibold text-[#d6e3ff]">{operation.merchant}</p>
+                      <p className="text-xs text-[#869398]">
+                        {categoryMeta.label || operation.category} · MCC {operation.mcc}
+                      </p>
+                    </div>
+                    <p className="font-semibold text-[#d6e3ff]">
+                      <UzsAmount as="span" value={`- ${Math.round(operation.amountUzs)}`} />
                     </p>
                   </div>
-                </div>
-                <p className="text-sm font-bold text-[#ffb4ab]">{isUnlocked ? anomaly.delta : '••%'}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mb-8 grid gap-4 lg:grid-cols-2">
-          <article className="rounded-3xl bg-[#0d1c32] p-6">
-            <h2 className="mb-5 text-xl font-bold">Категории расходов</h2>
-            <div className="space-y-4">
-              {categoryStats.map((category) => (
-                <div key={category.name}>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span>{category.name}</span>
-                    <span className="font-semibold">
-                      <UzsAmount as="span" value={isUnlocked ? category.amount : '•••••'} />
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full bg-[#1c2a41]">
-                    <div className={`h-full rounded-full ${category.color}`} style={{ width: `${category.value}%` }} />
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
-          </article>
-
-          <article className="rounded-3xl bg-[#0d1c32] p-6">
-            <h2 className="mb-5 text-xl font-bold">Семейная нагрузка</h2>
-            <div className="space-y-4">
-              {familyLoad.map((row) => (
-                <div key={row.member} className="rounded-2xl bg-[#112036] p-4">
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="font-semibold">{row.member}</span>
-                    <span className="text-[#bcc9ce]">{row.share}%</span>
-                  </div>
-                  <div className="mb-2 h-2 rounded-full bg-[#1c2a41]">
-                    <div className="h-full rounded-full bg-[#4cd6fb]" style={{ width: `${row.share}%` }} />
-                  </div>
-                  <p className="text-xs text-[#bcc9ce]">
-                    {isUnlocked ? <UzsAmount as="span" value={row.amount} /> : 'Сумма скрыта'}
-                  </p>
-                </div>
-              ))}
+          ) : (
+            <div className="rounded-2xl bg-[#112036] p-4 text-sm text-[#869398]">
+              Нет операций для выбранного месяца.
             </div>
-          </article>
-        </section>
-
-        <section className="rounded-3xl bg-[#0d1c32] p-6">
-          <h2 className="mb-5 text-xl font-bold">Прогресс финансовых целей</h2>
-          <div className="space-y-5">
-            {goals.map((goal) => (
-              <div key={goal.title}>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="font-semibold">{goal.title}</span>
-                  <span className="text-xs text-[#bcc9ce]">{goal.progress}%</span>
-                </div>
-                <div className="mb-2 h-2 rounded-full bg-[#1c2a41]">
-                  <div className="h-full rounded-full bg-gradient-to-r from-[#4cd6fb] to-[#00b4d8]" style={{ width: `${goal.progress}%` }} />
-                </div>
-                <p className="text-xs text-[#bcc9ce]">
-                  {isUnlocked
-                    ? goal.targetAmount
-                      ? (
-                        <>
-                          {goal.targetPrefix} <UzsAmount as="span" value={goal.targetAmount} />
-                        </>
-                        )
-                      : goal.targetText
-                    : 'Цель скрыта до разблокировки'}
-                </p>
-              </div>
-            ))}
-          </div>
+          )}
         </section>
       </main>
 
