@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary": "#233148",
+                    "tertiary-fixed-dim": "#58d6f1",
+                    "secondary-container": "#3c4962",
+                    "on-background": "#d6e3ff",
+                    "tertiary-fixed": "#a7edff",
+                    "on-primary": "#003642",
+                    "tertiary": "#58d6f1",
+                    "inverse-primary": "#00677d",
+                    "on-surface": "#d6e3ff",
+                    "secondary-fixed-dim": "#b9c7e4",
+                    "secondary-fixed": "#d6e3ff",
+                    "surface-container-low": "#0d1c32",
+                    "on-tertiary-fixed": "#001f25",
+                    "on-secondary-fixed-variant": "#39475f",
+                    "surface-tint": "#4cd6fb",
+                    "on-tertiary-fixed-variant": "#004e5b",
+                    "error-container": "#93000a",
+                    "on-tertiary-container": "#00414c",
+                    "surface": "#041329",
+                    "surface-container": "#112036",
+                    "primary-fixed-dim": "#4cd6fb",
+                    "outline-variant": "#3d494d",
+                    "inverse-on-surface": "#233148",
+                    "tertiary-container": "#25b4ce",
+                    "on-primary-container": "#00414f",
+                    "outline": "#869398",
+                    "on-secondary-container": "#abb9d6",
+                    "on-primary-fixed-variant": "#004e5f",
+                    "on-error-container": "#ffdad6",
+                    "primary-container": "#00b4d8",
+                    "on-primary-fixed": "#001f27",
+                    "surface-variant": "#27354c",
+                    "secondary": "#b9c7e4",
+                    "surface-bright": "#2c3951",
+                    "primary": "#4cd6fb",
+                    "on-secondary-fixed": "#0d1c32",
+                    "surface-container-lowest": "#010e24",
+                    "error": "#ffb4ab",
+                    "on-tertiary": "#00363f",
+                    "background": "#041329",
+                    "surface-dim": "#041329",
+                    "surface-container-high": "#1c2a41",
+                    "on-error": "#690005",
+                    "surface-container-highest": "#27354c",
+                    "primary-fixed": "#b3ebff",
+                    "on-surface-variant": "#bcc9ce",
+                    "inverse-surface": "#d6e3ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "2xl": "1rem",
+                    "3xl": "1.5rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      body { background-color: #041329; color: #d6e3ff; font-family: 'Inter', sans-serif; }
+      .glass-nav { background: rgba(4, 19, 41, 0.6); backdrop-filter: blur(20px); }
+      .text-gradient { background: linear-gradient(135deg, #4cd6fb 0%, #00b4d8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+      .btn-gradient { background: linear-gradient(135deg, #4cd6fb 0%, #00b4d8 100%); transition: filter 0.2s; }
+      .btn-gradient:hover { filter: brightness(1.1); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body selection:bg-primary/30">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#041329] dark:bg-[#041329] flex justify-between items-center px-6 py-4 w-full">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center overflow-hidden border border-outline-variant/20">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="High-end professional studio portrait of a successful entrepreneur in a navy suit with soft cinematic lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDl0cySZU9W3s6A0Goa1Q4XAD4b0-iZPdaI3UGkGK5_BDlBpQprVPjrTwflNBLILoEa0J-1eDs0yZPUpmGaRJtS-03wfkXEjn716X3mBwRFX4mZJU962LganI5e8vswYTgZuGhpngiyuqOWj38lOuzrydO1xWFSltVtESoxO4ueLInphldsV1bcsceuCq0e8UiKooJPBONEG5rKoEtbI-M6bsdmKwqCGVnzIn8j_IHugBZwLwZYNcamh-RUhlJN96RGKyr_gzzG5Fne"/>
+</div>
+<span class="font-headline tracking-tighter text-lg font-bold text-[#d6e3ff]">BANK OF RECREATE</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-[#4cd6fb] hover:bg-[#112036] transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</div>
+</header>
+<main class="pt-24 pb-32 px-6 max-w-4xl mx-auto space-y-10">
+<!-- Hero: Primary Actions (Asymmetric Grid) -->
+<section>
+<h1 class="font-headline text-3xl font-extrabold tracking-tight mb-8">Переводы</h1>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+<!-- Phone Number (Large Highlight) -->
+<div class="md:col-span-7 bg-surface-container rounded-3xl p-8 flex flex-col justify-between min-h-[220px] relative overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors">
+<div class="z-10">
+<span class="material-symbols-outlined text-primary text-4xl mb-4" data-icon="smartphone">smartphone</span>
+<h3 class="text-xl font-bold text-on-surface mb-2">По номеру телефона</h3>
+<p class="text-on-surface-variant text-sm max-w-[200px]">Через СБП мгновенно и без комиссии</p>
+</div>
+<div class="absolute -right-8 -bottom-8 w-48 h-48 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors"></div>
+<div class="z-10 mt-4 flex items-center text-primary font-semibold text-sm">
+                        Начать <span class="material-symbols-outlined ml-1 text-sm" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</div>
+<!-- Between Own -->
+<div class="md:col-span-5 bg-surface-container-low rounded-3xl p-6 flex flex-col justify-between hover:bg-surface-container transition-colors cursor-pointer">
+<div>
+<span class="material-symbols-outlined text-secondary text-3xl mb-3" data-icon="sync_alt">sync_alt</span>
+<h3 class="text-lg font-bold text-on-surface">Между своими</h3>
+<p class="text-on-surface-variant text-xs mt-1">Карты и счета</p>
+</div>
+<div class="mt-4 flex items-center justify-between">
+<span class="text-xs text-on-surface-variant">Без комиссии</span>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Card Number -->
+<div class="md:col-span-6 bg-surface-container-low rounded-3xl p-6 flex items-center gap-5 hover:bg-surface-container transition-colors cursor-pointer">
+<div class="w-12 h-12 rounded-2xl bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-tertiary" data-icon="credit_card">credit_card</span>
+</div>
+<div>
+<h3 class="font-bold text-on-surface">По номеру карты</h3>
+<p class="text-on-surface-variant text-xs">Любого банка мира</p>
+</div>
+</div>
+<!-- Other Bank -->
+<div class="md:col-span-6 bg-surface-container-low rounded-3xl p-6 flex items-center gap-5 hover:bg-surface-container transition-colors cursor-pointer">
+<div class="w-12 h-12 rounded-2xl bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" data-icon="account_balance">account_balance</span>
+</div>
+<div>
+<h3 class="font-bold text-on-surface">В другой банк</h3>
+<p class="text-on-surface-variant text-xs">По реквизитам счета</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Saved Recipients (Horizontal Scroll / Bento Style) -->
+<section>
+<div class="flex justify-between items-center mb-6">
+<h2 class="font-headline text-xl font-bold">Избранное</h2>
+<button class="text-primary text-sm font-medium hover:opacity-80">Все контакты</button>
+</div>
+<div class="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+<div class="flex-shrink-0 w-24 flex flex-col items-center gap-3">
+<button class="w-16 h-16 rounded-full border-2 border-dashed border-outline-variant/30 flex items-center justify-center text-on-surface-variant hover:border-primary/50 hover:text-primary transition-all">
+<span class="material-symbols-outlined text-3xl" data-icon="add">add</span>
+</button>
+<span class="text-[11px] font-medium text-center">Создать</span>
+</div>
+<!-- Recipient 1 -->
+<div class="flex-shrink-0 w-24 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="relative">
+<img alt="Anna M." class="w-16 h-16 rounded-full object-cover ring-2 ring-transparent group-hover:ring-primary transition-all" data-alt="Portrait of a young woman with a friendly smile, professional headshot style, blurred office background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBqtwgPv7U-lW5pwOEZZwKZnfPX5nH0hGAHLRK5WnNSTUfo0hr0GPUgsFr_lgmU6EXaZioqYrF4q78WY9sefBWGCzx5t2GkzliUYYQhrC4CIQrIk4CXMN0b59neR_n8Yzh4MwPCVt_Vz4E6UR8nKg-0p8jhXIM124GP8LUFt7jN7qe0QetnG_kVs8CnDQcI5zRKkG0aNveObd5yGnmGfSDrmipA0V0huXUEynlVm_ajt2V2VBQvLj72IwVHjbeTtCE_pzFDd-qC8brG"/>
+<div class="absolute -right-1 -bottom-1 w-6 h-6 bg-surface rounded-full flex items-center justify-center">
+<span class="text-[10px] bg-green-500 w-4 h-4 rounded-full border-2 border-surface"></span>
+</div>
+</div>
+<span class="text-[11px] font-medium text-center">Анна М.</span>
+</div>
+<!-- Recipient 2 -->
+<div class="flex-shrink-0 w-24 flex flex-col items-center gap-3 group cursor-pointer">
+<img alt="Dmitry" class="w-16 h-16 rounded-full object-cover ring-2 ring-transparent group-hover:ring-primary transition-all" data-alt="Close up portrait of a man in casual attire, natural soft lighting, minimalist background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVhv-AwJ6Xysyj8aYvnqOuLPDA713ygZJNkX4UPp9JrajUTiFWwF-RKmxBO71XK9N2ch-BBpCZvhO15SI0rzs4ORVOyFf4O_-jDX1NmXcmEt8XvljrytWt5Ouxb6iO1bJIbiDL0pHRnVuqpmDRVYkIyWhUt4o44389gRQy5R7PXUP0ojFzeHwmW4bnprBNO1ehTQhOxVATZOG-WYSY4tEBVlrj0B2RMk4FaMlOvLchyz6ENiA49QwL0X0LWA8ygxrIABsThT_lgK-H"/>
+<span class="text-[11px] font-medium text-center">Дмитрий П.</span>
+</div>
+<!-- Recipient 3 -->
+<div class="flex-shrink-0 w-24 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="w-16 h-16 rounded-full bg-surface-container-highest flex items-center justify-center text-primary-fixed-dim font-bold text-xl">
+                        КР
+                    </div>
+<span class="text-[11px] font-medium text-center">Мама</span>
+</div>
+<!-- Recipient 4 -->
+<div class="flex-shrink-0 w-24 flex flex-col items-center gap-3 group cursor-pointer">
+<img alt="Elena" class="w-16 h-16 rounded-full object-cover" data-alt="Close up of a stylish woman's face, cinematic soft focus, elegant lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD4R2l9JmNAm35BsxXsoA1BalcfowOFmkR4To9aZRLoJ5cG6pfzKIqlPhxAOpQTjV1cf-FMoyo-xhk96gDUtWkU9NsgvmhgQSaZdLg1Yjr6d2jU17tdRthaMer2h4MIxcw6cveSvM8lHpBrua3R5u1FhnO-uAC6XipqQq_z9uWKO_MX93CskEoTAFw878BAdcbMRA8ThaBPdnEPUlysjcMCselPus7u_79yQa0lF4d8TvVBAgfif8C6ZKUUAYJ9DM42TVDtxbJQNI4G"/>
+<span class="text-[11px] font-medium text-center">Елена К.</span>
+</div>
+</div>
+</section>
+<!-- Quick Shortcuts -->
+<section>
+<h2 class="font-headline text-xl font-bold mb-6">Быстрые платежи</h2>
+<div class="space-y-4">
+<div class="bg-surface-container rounded-2xl p-5 flex items-center justify-between hover:bg-surface-container-high transition-colors cursor-pointer">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-xl bg-[#112036] flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary" data-icon="bolt">bolt</span>
+</div>
+<div>
+<p class="font-semibold text-sm">Мобильная связь</p>
+<p class="text-xs text-on-surface-variant">Мегафон • +7 (921) ***-44-55</p>
+</div>
+</div>
+<span class="text-on-surface font-bold">500 ₽</span>
+</div>
+<div class="bg-surface-container rounded-2xl p-5 flex items-center justify-between hover:bg-surface-container-high transition-colors cursor-pointer">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-xl bg-[#112036] flex items-center justify-center">
+<span class="material-symbols-outlined text-tertiary" data-icon="home">home</span>
+</div>
+<div>
+<p class="font-semibold text-sm">ЖКУ Квартплата</p>
+<p class="text-xs text-on-surface-variant">ЛС №45930211</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+</section>
+<!-- Recent History -->
+<section>
+<div class="flex justify-between items-center mb-6">
+<h2 class="font-headline text-xl font-bold">История</h2>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer" data-icon="calendar_today">calendar_today</span>
+</div>
+<div class="space-y-8">
+<!-- Group: Yesterday -->
+<div>
+<p class="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4">Вчера</p>
+<div class="space-y-6">
+<!-- Transaction 1 -->
+<div class="flex items-center justify-between group cursor-pointer">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center overflow-hidden">
+<img alt="Sber" class="w-6 h-6 grayscale opacity-80" data-alt="Minimalist vector logo of a banking institution in green and white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCe2bgKVmB7aFbxF_mYxwQ1X1TnyowK6K30TmxpjRQffDKOYzJzkpbAFB39LRB2mPT6ndcWdBlqTrH5jBVsjUS13UzDx4vbU9pByq7G3GJB7FVPbxmIhRLAOqpsOeoJ4PVp1QB2teOwWVlXX1qO2QXW61e5lJ0JWaxkswjX3AFnEXts5P-Nkc0lM4xou9d0NiHQLkdBAl9l_CUiQmj-h7EhHtGM4e5gcKChJNeeHc3NEw6yCwpJBBahh9BdtXq2XstXvATTcWCbOTaq"/>
+</div>
+<div>
+<p class="font-semibold">Перевод в Сбербанк</p>
+<p class="text-xs text-on-surface-variant">Александр В. • 14:20</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-bold text-on-surface">− 12 400 ₽</p>
+<p class="text-[10px] text-green-400 font-medium">Исполнено</p>
+</div>
+</div>
+<!-- Transaction 2 -->
+<div class="flex items-center justify-between group cursor-pointer">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" data-icon="person">person</span>
+</div>
+<div>
+<p class="font-semibold">Между своими</p>
+<p class="text-xs text-on-surface-variant">С Visa Gold на Мир • 09:12</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-bold text-on-surface">5 000 ₽</p>
+<p class="text-[10px] text-on-surface-variant">Внутренний</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Group: 12 October -->
+<div>
+<p class="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4">12 Октября</p>
+<div class="space-y-6">
+<!-- Transaction 3 -->
+<div class="flex items-center justify-between group cursor-pointer">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center overflow-hidden">
+<img alt="Wildberries" class="w-6 h-6" data-alt="E-commerce shopping cart icon minimalist flat design" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-8keBl6Y7XEV5eza8jZBZyGAz8FBOmU4dJR1bOwH-_U2A_I8lFjsBBC1SNkn_r9UgS6_X8D893_3STX6TREqVdqoeatbvrdIsqkjDi2dX7kjRiiM5Bjgee2SKykxMYpCJwYQ7cNG3I3Rxbq0G4eXdO2YreVZHPJO5iqAHQ_OmV-EKTaK76jxmPS3O_GcwL4H7pU-9hpq_EIcJwK25jlNDl9Ec65vO3YJmY96qlGIBlA7imMHONzB9QnE5tWdMYlXQQ_X6PQ8534t7"/>
+</div>
+<div>
+<p class="font-semibold">Оплата по QR-коду</p>
+<p class="text-xs text-on-surface-variant">Wildberries • 18:45</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-bold text-on-surface">− 2 850 ₽</p>
+<p class="text-[10px] text-green-400 font-medium">Кэшбэк 28 ₽</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-[24px] bg-[#041329]/60 backdrop-blur-xl dark:bg-[#041329]/60 shadow-[0_-4px_40px_rgba(0,0,0,0.4)] fixed bottom-0 w-full flex justify-around items-center px-4 pb-6 pt-2">
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Главная</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#4cd6fb] bg-[#112036] rounded-2xl p-2 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="sync_alt">sync_alt</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Переводы</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Платежи</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Мониторинг</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="apps">apps</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Все сервисы</span>
+</a>
+</nav>
+</body></html>

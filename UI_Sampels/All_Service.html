@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary": "#233148",
+                    "tertiary-fixed-dim": "#58d6f1",
+                    "secondary-container": "#3c4962",
+                    "on-background": "#d6e3ff",
+                    "tertiary-fixed": "#a7edff",
+                    "on-primary": "#003642",
+                    "tertiary": "#58d6f1",
+                    "inverse-primary": "#00677d",
+                    "on-surface": "#d6e3ff",
+                    "secondary-fixed-dim": "#b9c7e4",
+                    "secondary-fixed": "#d6e3ff",
+                    "surface-container-low": "#0d1c32",
+                    "on-tertiary-fixed": "#001f25",
+                    "on-secondary-fixed-variant": "#39475f",
+                    "surface-tint": "#4cd6fb",
+                    "on-tertiary-fixed-variant": "#004e5b",
+                    "error-container": "#93000a",
+                    "on-tertiary-container": "#00414c",
+                    "surface": "#041329",
+                    "surface-container": "#112036",
+                    "primary-fixed-dim": "#4cd6fb",
+                    "outline-variant": "#3d494d",
+                    "inverse-on-surface": "#233148",
+                    "tertiary-container": "#25b4ce",
+                    "on-primary-container": "#00414f",
+                    "outline": "#869398",
+                    "on-secondary-container": "#abb9d6",
+                    "on-primary-fixed-variant": "#004e5f",
+                    "on-error-container": "#ffdad6",
+                    "primary-container": "#00b4d8",
+                    "on-primary-fixed": "#001f27",
+                    "surface-variant": "#27354c",
+                    "secondary": "#b9c7e4",
+                    "surface-bright": "#2c3951",
+                    "primary": "#4cd6fb",
+                    "on-secondary-fixed": "#0d1c32",
+                    "surface-container-lowest": "#010e24",
+                    "error": "#ffb4ab",
+                    "on-tertiary": "#00363f",
+                    "background": "#041329",
+                    "surface-dim": "#041329",
+                    "surface-container-high": "#1c2a41",
+                    "on-error": "#690005",
+                    "surface-container-highest": "#27354c",
+                    "primary-fixed": "#b3ebff",
+                    "on-surface-variant": "#bcc9ce",
+                    "inverse-surface": "#d6e3ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "1.5rem",
+                    "2xl": "2rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            backdrop-filter: blur(20px);
+            background: rgba(39, 53, 76, 0.6);
+        }
+        .text-gradient {
+            background: linear-gradient(135deg, #4cd6fb 0%, #00b4d8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary/30 min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#041329] flex justify-between items-center px-6 py-4 w-full">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center border border-outline-variant/20 overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="minimalist professional portrait of a male executive in dark blue attire with clean studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBCGjhS0o0pwBJL_KkmGAGb4sgqlOczX_6rodm_2ya5nj5Ajt39ytupAi1f82ipa9kItrbJx5xjk-i8vdv4aQfljJhMnqle6ePRTho9O_IjJiDSF_vognUhjvFhcWJLF6JuFM6TWgma_3LgnZlP1sf2YtJdvf6x3YY1sRx_9OVVEpjLzvrJ4ksf4KECZUhtmrF1q02vh9au22nGcJuWvX3b9sFAWZUtm0i6L-aAaVFaOIkVu9ggoRoNeE7o9KQ-GlopqYMYV2iTNK3I"/>
+</div>
+<span class="text-lg font-bold tracking-tighter text-[#d6e3ff] font-headline">BANK OF RECREATE</span>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#112036] transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined text-[#4cd6fb]">notifications</span>
+</button>
+</header>
+<main class="pt-24 px-6 max-w-5xl mx-auto">
+<!-- Search & Welcome -->
+<section class="mb-10">
+<h1 class="text-3xl font-extrabold font-headline tracking-tight text-[#d6e3ff] mb-2">Все сервисы</h1>
+<p class="text-on-surface-variant text-sm mb-6 font-medium">Ваша цифровая финансовая экосистема</p>
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border-b border-outline-variant/20 focus:border-primary transition-all duration-300 py-4 pl-12 pr-4 rounded-xl text-on-surface placeholder:text-on-surface-variant/50 focus:ring-0" placeholder="Поиск услуг и функций..." type="text"/>
+</div>
+</section>
+<!-- Featured Section: Family Finance AI -->
+<section class="mb-12">
+<div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-surface-container to-surface-container-low p-8 border border-primary/10">
+<div class="relative z-10 grid md:grid-cols-2 gap-8 items-center">
+<div>
+<span class="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest mb-4">Premium AI</span>
+<h2 class="text-2xl font-bold font-headline mb-4 text-[#d6e3ff]">Family Finance AI</h2>
+<p class="text-on-surface-variant mb-6 leading-relaxed">Интеллектуальное управление семейным бюджетом. Искусственный интеллект анализирует траты всех членов семьи и дает рекомендации по экономии.</p>
+<button class="bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold px-8 py-3 rounded-full hover:brightness-110 transition-all active:scale-95">Подключить сейчас</button>
+</div>
+<div class="hidden md:block relative h-48">
+<div class="absolute inset-0 bg-primary/20 blur-[80px] rounded-full"></div>
+<img alt="AI Interface" class="relative z-10 w-full h-full object-contain" data-alt="abstract digital representation of artificial intelligence neural networks glowing in electric blue on a deep black background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBugEpnyUcQI9LRX7kuXKI1CEbPe9QzSnTdhQxy9Ef_iOQqZ0DWrFM7mE1P69BCbZCs6vVAV04F1ixfXfgksn86RAKGbzXDdWWOMJNXhOypnc88eI6m0rfuVcYc_emCiphocfvDfCb31NCFxOQz4egUnAZgnVnph1JcP3LCu1KvMjXCipH3A4apK_UIcamTZIh8DIzTX5W2jBf2rVi7JbAia1ynEzAgI1TU-YI2Cc9SP3NydvFA5AAbo3Ni4ijLB89imA0Bvzy__-8C"/>
+</div>
+</div>
+</div>
+</section>
+<!-- Main Services Grid -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+<!-- Cards -->
+<div class="bg-surface-container p-6 rounded-2xl hover:bg-surface-container-high transition-colors cursor-pointer group border border-transparent hover:border-outline-variant/10">
+<div class="w-12 h-12 bg-surface-container-low rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-2xl">credit_card</span>
+</div>
+<h3 class="font-bold text-on-surface mb-1">Карты</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Дебетовые и кредитные</p>
+</div>
+<!-- Deposits -->
+<div class="bg-surface-container p-6 rounded-2xl hover:bg-surface-container-high transition-colors cursor-pointer group border border-transparent hover:border-outline-variant/10">
+<div class="w-12 h-12 bg-surface-container-low rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-2xl">account_balance_wallet</span>
+</div>
+<h3 class="font-bold text-on-surface mb-1">Вклады</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">До 18% годовых</p>
+</div>
+<!-- Loans -->
+<div class="bg-surface-container p-6 rounded-2xl hover:bg-surface-container-high transition-colors cursor-pointer group border border-transparent hover:border-outline-variant/10">
+<div class="w-12 h-12 bg-surface-container-low rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-2xl">real_estate_agent</span>
+</div>
+<h3 class="font-bold text-on-surface mb-1">Кредиты</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Ипотека и наличные</p>
+</div>
+<!-- Insurance -->
+<div class="bg-surface-container p-6 rounded-2xl hover:bg-surface-container-high transition-colors cursor-pointer group border border-transparent hover:border-outline-variant/10">
+<div class="w-12 h-12 bg-surface-container-low rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-2xl">health_and_safety</span>
+</div>
+<h3 class="font-bold text-on-surface mb-1">Страхование</h3>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Защита жизни и дома</p>
+</div>
+</div>
+<!-- Secondary Services Grid (Bento Style) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+<!-- Investments -->
+<div class="md:col-span-2 bg-surface-container-low rounded-2xl p-8 flex justify-between items-center relative overflow-hidden group">
+<div class="relative z-10">
+<h3 class="text-xl font-bold mb-2">Инвестиции</h3>
+<p class="text-on-surface-variant text-sm mb-6 max-w-[240px]">Откройте доступ к мировым фондовым рынкам в один клик.</p>
+<div class="flex gap-4">
+<div class="flex flex-col">
+<span class="text-xs text-on-surface-variant">IMOEX</span>
+<span class="text-sm font-bold text-tertiary">+1.24%</span>
+</div>
+<div class="flex flex-col">
+<span class="text-xs text-on-surface-variant">Золото</span>
+<span class="text-sm font-bold text-tertiary">+0.85%</span>
+</div>
+</div>
+</div>
+<div class="w-32 h-32 opacity-20 group-hover:opacity-40 transition-opacity">
+<span class="material-symbols-outlined text-[120px] text-primary" style="font-variation-settings: 'FILL' 1;">trending_up</span>
+</div>
+</div>
+<!-- Exchange -->
+<div class="bg-surface-container-highest rounded-2xl p-8 flex flex-col justify-between">
+<div>
+<h3 class="text-xl font-bold mb-4">Обмен</h3>
+<div class="space-y-3">
+<div class="flex justify-between items-center text-sm">
+<span class="text-on-surface-variant">USD/RUB</span>
+<span class="font-bold">92.45</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<span class="text-on-surface-variant">EUR/RUB</span>
+<span class="font-bold">100.12</span>
+</div>
+</div>
+</div>
+<button class="mt-8 text-primary font-bold text-sm flex items-center gap-2 group">
+                    Перейти в обменник
+                    <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Ecosystem Services -->
+<h2 class="text-xl font-bold font-headline mb-6 text-[#d6e3ff]">Экосистема и инструменты</h2>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<!-- Budget Analytics -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">analytics</span>
+<span class="text-sm font-semibold">Аналитика</span>
+</div>
+<!-- Goals -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">flag</span>
+<span class="text-sm font-semibold">Цели</span>
+</div>
+<!-- QR Payments -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">qr_code_scanner</span>
+<span class="text-sm font-semibold">QR-оплата</span>
+</div>
+<!-- Business -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">business_center</span>
+<span class="text-sm font-semibold">Бизнес</span>
+</div>
+<!-- Travel -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">flight_takeoff</span>
+<span class="text-sm font-semibold">Путешествия</span>
+</div>
+<!-- Support -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">support_agent</span>
+<span class="text-sm font-semibold">Поддержка</span>
+</div>
+<!-- Security -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary mb-3 text-3xl">shield</span>
+<span class="text-sm font-semibold">Безопасность</span>
+</div>
+<!-- More -->
+<div class="bg-surface-container p-6 rounded-2xl flex flex-col items-center text-center opacity-50">
+<span class="material-symbols-outlined text-on-surface-variant mb-3 text-3xl">more_horiz</span>
+<span class="text-sm font-semibold">Скоро</span>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full flex justify-around items-center px-4 pb-6 pt-2 bg-[#041329]/60 backdrop-blur-xl z-50 rounded-t-[24px] shadow-[0_-4px_40px_rgba(0,0,0,0.4)]">
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Главная</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">sync_alt</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Переводы</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Платежи</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Мониторинг</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#4cd6fb] bg-[#112036] rounded-2xl p-2 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">apps</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Все сервисы</span>
+</a>
+</nav>
+</body></html>

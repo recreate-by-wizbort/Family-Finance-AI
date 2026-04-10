@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BANK OF RECREATE BY WIZBORT</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary": "#233148",
+                    "tertiary-fixed-dim": "#58d6f1",
+                    "secondary-container": "#3c4962",
+                    "on-background": "#d6e3ff",
+                    "tertiary-fixed": "#a7edff",
+                    "on-primary": "#003642",
+                    "tertiary": "#58d6f1",
+                    "inverse-primary": "#00677d",
+                    "on-surface": "#d6e3ff",
+                    "secondary-fixed-dim": "#b9c7e4",
+                    "secondary-fixed": "#d6e3ff",
+                    "surface-container-low": "#0d1c32",
+                    "on-tertiary-fixed": "#001f25",
+                    "on-secondary-fixed-variant": "#39475f",
+                    "surface-tint": "#4cd6fb",
+                    "on-tertiary-fixed-variant": "#004e5b",
+                    "error-container": "#93000a",
+                    "on-tertiary-container": "#00414c",
+                    "surface": "#041329",
+                    "surface-container": "#112036",
+                    "primary-fixed-dim": "#4cd6fb",
+                    "outline-variant": "#3d494d",
+                    "inverse-on-surface": "#233148",
+                    "tertiary-container": "#25b4ce",
+                    "on-primary-container": "#00414f",
+                    "outline": "#869398",
+                    "on-secondary-container": "#abb9d6",
+                    "on-primary-fixed-variant": "#004e5f",
+                    "on-error-container": "#ffdad6",
+                    "primary-container": "#00b4d8",
+                    "on-primary-fixed": "#001f27",
+                    "surface-variant": "#27354c",
+                    "secondary": "#b9c7e4",
+                    "surface-bright": "#2c3951",
+                    "primary": "#4cd6fb",
+                    "on-secondary-fixed": "#0d1c32",
+                    "surface-container-lowest": "#010e24",
+                    "error": "#ffb4ab",
+                    "on-tertiary": "#00363f",
+                    "background": "#041329",
+                    "surface-dim": "#041329",
+                    "surface-container-high": "#1c2a41",
+                    "on-error": "#690005",
+                    "surface-container-highest": "#27354c",
+                    "primary-fixed": "#b3ebff",
+                    "on-surface-variant": "#bcc9ce",
+                    "inverse-surface": "#d6e3ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "2xl": "1rem",
+                    "3xl": "1.5rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3 { font-family: 'Manrope', sans-serif; }
+        .glass-card {
+            background: linear-gradient(135deg, rgba(76, 214, 251, 0.1) 0%, rgba(0, 180, 216, 0.05) 100%);
+            backdrop-filter: blur(20px);
+        }
+        .main-card-gradient {
+            background: linear-gradient(135deg, #4cd6fb 0%, #00b4d8 100%);
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#041329] flex justify-between items-center px-6 py-4 w-full">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center border border-outline-variant/20">
+<span class="material-symbols-outlined text-primary">person</span>
+</div>
+<span class="text-lg font-bold tracking-tighter text-[#d6e3ff] font-['Manrope']">BANK OF RECREATE</span>
+</div>
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-[#112036] transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined text-[#4cd6fb]">notifications</span>
+</button>
+</header>
+<main class="mt-20 px-6 max-w-5xl mx-auto">
+<!-- Hero Section: Premium Balance Card -->
+<section class="mb-10">
+<div class="main-card-gradient rounded-3xl p-8 relative overflow-hidden shadow-2xl">
+<!-- Abstract patterns -->
+<div class="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
+<div class="relative z-10 flex flex-col h-full justify-between">
+<div>
+<p class="text-on-primary/70 font-medium tracking-wide text-xs mb-1 uppercase">Текущий баланс</p>
+<h2 class="text-4xl md:text-5xl font-extrabold text-on-primary tracking-tight">2 450 800.00 ₽</h2>
+</div>
+<div class="mt-12 flex items-center justify-between">
+<div class="flex -space-x-3">
+<div class="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
+<span class="material-symbols-outlined text-on-primary text-sm">credit_card</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
+<span class="material-symbols-outlined text-on-primary text-sm">account_balance_wallet</span>
+</div>
+</div>
+<button class="bg-on-primary text-primary px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+                            Детали <span class="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Bento Grid for Key Actions -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+<div class="bg-surface-container rounded-2xl p-5 flex flex-col justify-between aspect-square md:aspect-auto hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-primary text-3xl">savings</span>
+<div>
+<h3 class="text-on-surface font-bold">Вклады</h3>
+<p class="text-on-surface-variant text-xs mt-1">До 15% годовых</p>
+</div>
+</div>
+<div class="bg-surface-container rounded-2xl p-5 flex flex-col justify-between aspect-square md:aspect-auto hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-tertiary text-3xl">campaign</span>
+<div>
+<h3 class="text-on-surface font-bold">Акции</h3>
+<p class="text-on-surface-variant text-xs mt-1">Кэшбэк до 30%</p>
+</div>
+</div>
+<div class="bg-surface-container rounded-2xl p-5 flex flex-col justify-between aspect-square md:aspect-auto hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-primary text-3xl">health_and_safety</span>
+<div>
+<h3 class="text-on-surface font-bold">Страхование</h3>
+<p class="text-on-surface-variant text-xs mt-1">Защита активов</p>
+</div>
+</div>
+<div class="bg-surface-container rounded-2xl p-5 flex flex-col justify-between aspect-square md:aspect-auto hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-tertiary text-3xl">local_offer</span>
+<div>
+<h3 class="text-on-surface font-bold">Предложения</h3>
+<p class="text-on-surface-variant text-xs mt-1">Для вас</p>
+</div>
+</div>
+</div>
+<!-- Featured Offers Horizontal Scroll -->
+<section class="mb-10 overflow-hidden">
+<div class="flex justify-between items-center mb-4">
+<h2 class="text-xl font-bold text-on-surface">Специальные предложения</h2>
+<button class="text-primary text-sm font-medium">Все</button>
+</div>
+<div class="flex gap-4 overflow-x-auto no-scrollbar pb-4 snap-x">
+<div class="min-w-[280px] h-40 bg-surface-container-low rounded-3xl relative overflow-hidden snap-center p-6 flex flex-col justify-end">
+<img class="absolute inset-0 w-full h-full object-cover opacity-40" data-alt="modern skyscraper architecture reflecting blue sky and neon lights at dusk futuristic city aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZhfBPmpUxgKQVkWHJWcu0hNyljVYXGCXOeuz_j708scbDnHq3bS2Df0tBDxBvGPkosOcz2atW9fLr8p4ms9AajhRDZdSUodt_jfSNwqgSXkHJtruQXZtgkbQPp-8U3q9EBp_Wh-SYqdlDI6xJRxtDTpbhP4Gft44XwRBYeLK5EI7OJXWZDpE13y5zwjSkqtRDd6tzatPtYPW1TH01roAPtpWgd8u83riO1mKPl6suflWl4bTKkCJ5wPmUAbKZI_3RBWkzGImjdPL9"/>
+<div class="relative z-10">
+<span class="bg-primary/20 text-primary text-[10px] px-2 py-1 rounded-full border border-primary/30 font-bold mb-2 inline-block">VIP ПАКЕТ</span>
+<h4 class="text-lg font-bold leading-tight">Обслуживание уровня Platinum</h4>
+</div>
+</div>
+<div class="min-w-[280px] h-40 bg-surface-container-low rounded-3xl relative overflow-hidden snap-center p-6 flex flex-col justify-end">
+<img class="absolute inset-0 w-full h-full object-cover opacity-40" data-alt="luxurious yacht interior with soft morning light through windows premium travel and lifestyle concept" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjJiY09UnaDDcguY3QFXXG9NajehRFEJ5389F3255qfRouKwtzbkqk49oi2Qohq2WgDcnwLoDIXprhT6oh7Ce9Z0xguHMniqC12yZo_fkpKKpnhSOZw9wdDs2b9VpSmZqQmswbrMZLKkIeA63e9ztEClytOFcYpMBOTFduZ6LTArpRb7vAWlAjRi12WJpctlhVZIGndzNvQmFXnejcKmwNpCoblIK5o-p2BzfzQHjqsgQhs1eeHt3Dk1Yag938GJZzQrsqVEEuOrRI"/>
+<div class="relative z-10">
+<span class="bg-tertiary/20 text-tertiary text-[10px] px-2 py-1 rounded-full border border-tertiary/30 font-bold mb-2 inline-block">TRAVEL</span>
+<h4 class="text-lg font-bold leading-tight">Мильное страхование поездок</h4>
+</div>
+</div>
+<div class="min-w-[280px] h-40 bg-surface-container-low rounded-3xl relative overflow-hidden snap-center p-6 flex flex-col justify-end">
+<img class="absolute inset-0 w-full h-full object-cover opacity-40" data-alt="abstract financial data visualization with glowing blue lines and data points on dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuChARR0sk9sTUar-F2PdDXcWZ5lRh5uX7t9P294SRWvPkn0w8bb2lqs_758XBnSzz9Pdb3zzSuFCV9g7c2soddMAMba3uEGN7KrIih6_FJAq3UN2WquBGq942s5rPU0vLkasmEQ2K1hvtbIvB3WmqIC2ET_vYZVYendrA4HrE9MNfnFBSCVxVFPZ0MLiHkgCVIgH8N_hHMGBV2Gib6Z1fTbR2EzIrcIVzRTxj4gN4L3oK4dZiAsdfGHGnWBR2BEJHd-uBx25Zgh1Hz-"/>
+<div class="relative z-10">
+<span class="bg-primary/20 text-primary text-[10px] px-2 py-1 rounded-full border border-primary/30 font-bold mb-2 inline-block">ИНВЕСТИЦИИ</span>
+<h4 class="text-lg font-bold leading-tight">Портфельное управление Recreate</h4>
+</div>
+</div>
+</div>
+</section>
+<!-- Banking Widgets / Monitoring -->
+<section class="mb-10">
+<h2 class="text-xl font-bold text-on-surface mb-4">Виджеты мониторинга</h2>
+<div class="space-y-4">
+<div class="bg-surface-container rounded-2xl p-6 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">analytics</span>
+</div>
+<div>
+<h4 class="font-bold">Аналитика трат</h4>
+<p class="text-on-surface-variant text-sm">За последние 30 дней</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-error font-bold">- 142 500 ₽</p>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">на 12% больше</p>
+</div>
+</div>
+<div class="bg-surface-container rounded-2xl p-6 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-high flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined">currency_exchange</span>
+</div>
+<div>
+<h4 class="font-bold">Курсы валют</h4>
+<p class="text-on-surface-variant text-sm">USD/RUB · EUR/RUB</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div>
+<p class="text-xs text-on-surface-variant">USD</p>
+<p class="font-bold">92.45</p>
+</div>
+<div>
+<p class="text-xs text-on-surface-variant">EUR</p>
+<p class="font-bold">100.12</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full flex justify-around items-center px-4 pb-6 pt-2 bg-[#041329]/60 backdrop-blur-xl z-50 rounded-t-[24px] shadow-[0_-4px_40px_rgba(0,0,0,0.4)]">
+<!-- Active Tab: Главная -->
+<a class="flex flex-col items-center justify-center text-[#4cd6fb] bg-[#112036] rounded-2xl p-2 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Главная</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">sync_alt</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Переводы</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Платежи</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Мониторинг</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined">apps</span>
+<span class="font-['Inter'] text-[10px] font-medium mt-1">Все сервисы</span>
+</a>
+</nav>
+</body></html>

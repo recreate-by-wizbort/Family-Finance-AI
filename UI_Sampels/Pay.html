@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Платежи | BANK OF RECREATE</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#233148",
+                        "tertiary-fixed-dim": "#58d6f1",
+                        "secondary-container": "#3c4962",
+                        "on-background": "#d6e3ff",
+                        "tertiary-fixed": "#a7edff",
+                        "on-primary": "#003642",
+                        "tertiary": "#58d6f1",
+                        "inverse-primary": "#00677d",
+                        "on-surface": "#d6e3ff",
+                        "secondary-fixed-dim": "#b9c7e4",
+                        "secondary-fixed": "#d6e3ff",
+                        "surface-container-low": "#0d1c32",
+                        "on-tertiary-fixed": "#001f25",
+                        "on-secondary-fixed-variant": "#39475f",
+                        "surface-tint": "#4cd6fb",
+                        "on-tertiary-fixed-variant": "#004e5b",
+                        "error-container": "#93000a",
+                        "on-tertiary-container": "#00414c",
+                        "surface": "#041329",
+                        "surface-container": "#112036",
+                        "primary-fixed-dim": "#4cd6fb",
+                        "outline-variant": "#3d494d",
+                        "inverse-on-surface": "#233148",
+                        "tertiary-container": "#25b4ce",
+                        "on-primary-container": "#00414f",
+                        "outline": "#869398",
+                        "on-secondary-container": "#abb9d6",
+                        "on-primary-fixed-variant": "#004e5f",
+                        "on-error-container": "#ffdad6",
+                        "primary-container": "#00b4d8",
+                        "on-primary-fixed": "#001f27",
+                        "surface-variant": "#27354c",
+                        "secondary": "#b9c7e4",
+                        "surface-bright": "#2c3951",
+                        "primary": "#4cd6fb",
+                        "on-secondary-fixed": "#0d1c32",
+                        "surface-container-lowest": "#010e24",
+                        "error": "#ffb4ab",
+                        "on-tertiary": "#00363f",
+                        "background": "#041329",
+                        "surface-dim": "#041329",
+                        "surface-container-high": "#1c2a41",
+                        "on-error": "#690005",
+                        "surface-container-highest": "#27354c",
+                        "primary-fixed": "#b3ebff",
+                        "on-surface-variant": "#bcc9ce",
+                        "inverse-surface": "#d6e3ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #041329; color: #d6e3ff; }
+        h1, h2, h3 { font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-panel { background: rgba(17, 32, 54, 0.6); backdrop-filter: blur(20px); }
+        .wealth-spark { background: radial-gradient(circle, rgba(88, 214, 241, 0.15) 0%, transparent 70%); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface selection:bg-primary-container selection:text-on-primary-container">
+<!-- Top Navigation Anchor -->
+<header class="fixed top-0 w-full z-50 bg-[#041329] dark:bg-[#041329] flex justify-between items-center px-6 py-4 w-full">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full overflow-hidden bg-surface-container-highest flex items-center justify-center border-2 border-primary-container">
+<img class="w-full h-full object-cover" data-alt="Close-up portrait of a professional businessman in high-end financial environment with soft bokeh background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBVMeFa0VPCcfR3pS6vt6UGrIoD002zRa1_ExbKyJPjyseEV85GQ7e_ZoU_nd1CnysfJ1_bza1vULJ3JS03ul22yvsLEUXR1gbK2c5gqq1Zh66BT_l26pqq--V1p022Oj88hgj3G2Yo61K2rKHgBxvEH9B97SYFyFphP80TKyMO8MyvO5mBn_G1Qt4Ex_Af76AbClQMxuUMWL4cQtU3EebCIGnqL7EJ3uZ-NAZa-Qfg-qMy5Td-qYkNsB7Wkecg6_M5aE3STKdjqfiu"/>
+</div>
+<span class="text-lg font-bold tracking-tighter text-[#d6e3ff] font-['Manrope'] tracking-tight">BANK OF RECREATE</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-[#112036] transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined text-[#4cd6fb]">notifications</span>
+</button>
+</div>
+</header>
+<main class="pt-24 pb-32 px-6 max-w-7xl mx-auto">
+<!-- Hero Search Section -->
+<section class="mb-12">
+<div class="mb-8">
+<h1 class="text-4xl md:text-5xl font-extrabold tracking-tight text-on-surface mb-2">Платежи</h1>
+<p class="text-on-surface-variant text-lg">Быстрые оплаты и переводы в одно касание</p>
+</div>
+<div class="relative group max-w-2xl">
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-on-surface-variant">search</span>
+</div>
+<input class="w-full h-16 pl-14 pr-6 bg-surface-container-low border-b-2 border-outline-variant/20 focus:border-primary focus:ring-0 transition-all rounded-t-2xl font-medium text-lg placeholder:text-on-surface-variant/50" placeholder="Поиск услуг или организаций" type="text"/>
+</div>
+</section>
+<!-- Bento Grid for Categories -->
+<section class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 mb-16">
+<!-- ЖКХ (Utilities) -->
+<div class="group cursor-pointer col-span-2 md:col-span-2 lg:col-span-2 h-48 rounded-2xl bg-surface-container-low hover:bg-surface-container transition-all relative overflow-hidden flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-4xl" data-icon="home">home</span>
+</div>
+<div>
+<h3 class="text-xl font-bold mb-1">ЖКХ</h3>
+<p class="text-on-surface-variant text-xs font-medium uppercase tracking-widest">Utilities</p>
+</div>
+</div>
+<!-- Мобильная связь (Mobile) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container hover:bg-surface-container-highest transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="smartphone">smartphone</span>
+</div>
+<div>
+<h3 class="font-bold">Мобильная связь</h3>
+</div>
+</div>
+<!-- Топливо (Fuel) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container-low hover:bg-surface-container transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="local_gas_station">local_gas_station</span>
+</div>
+<div>
+<h3 class="font-bold">Топливо</h3>
+</div>
+</div>
+<!-- Авиабилеты (Flights) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-primary-container/10 border border-primary/20 hover:bg-primary-container/20 transition-all relative flex flex-col justify-end p-6 overflow-hidden">
+<div class="absolute -right-4 -top-4 w-24 h-24 wealth-spark opacity-50"></div>
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="flight">flight</span>
+</div>
+<div>
+<h3 class="font-bold text-primary">Авиабилеты</h3>
+</div>
+</div>
+<!-- Транспорт (Transport) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container hover:bg-surface-container-highest transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="directions_bus">directions_bus</span>
+</div>
+<div>
+<h3 class="font-bold">Транспорт</h3>
+</div>
+</div>
+<!-- Интернет (Internet) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container-low hover:bg-surface-container transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="language">language</span>
+</div>
+<div>
+<h3 class="font-bold">Интернет</h3>
+</div>
+</div>
+<!-- ТВ (TV) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container hover:bg-surface-container-highest transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="tv">tv</span>
+</div>
+<div>
+<h3 class="font-bold">ТВ</h3>
+</div>
+</div>
+<!-- Налоги (Taxes) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container-low hover:bg-surface-container transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="account_balance">account_balance</span>
+</div>
+<div>
+<h3 class="font-bold">Налоги</h3>
+</div>
+</div>
+<!-- Образование (Education) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container hover:bg-surface-container-highest transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="school">school</span>
+</div>
+<div>
+<h3 class="font-bold">Образование</h3>
+</div>
+</div>
+<!-- Подписки (Subscriptions) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container-low hover:bg-surface-container transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="subscriptions">subscriptions</span>
+</div>
+<div>
+<h3 class="font-bold">Подписки</h3>
+</div>
+</div>
+<!-- Госуслуги (Gov Services) -->
+<div class="group cursor-pointer h-48 rounded-2xl bg-surface-container hover:bg-surface-container-highest transition-all relative flex flex-col justify-end p-6">
+<div class="absolute top-6 right-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="gavel">gavel</span>
+</div>
+<div>
+<h3 class="font-bold">Госуслуги</h3>
+</div>
+</div>
+</section>
+<!-- Asymmetric Promotional Section -->
+<section class="flex flex-col lg:flex-row gap-8 items-stretch mb-16">
+<div class="flex-1 rounded-[32px] bg-gradient-to-br from-primary/20 to-surface-container-low p-10 relative overflow-hidden">
+<div class="relative z-10">
+<h2 class="text-3xl font-bold mb-4">Автоплатежи</h2>
+<p class="text-on-surface-variant max-w-md mb-8">Настройте автоматическую оплату счетов и больше не беспокойтесь о сроках. Мы напомним о каждом списании.</p>
+<button class="px-8 py-4 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-full hover:brightness-110 active:scale-95 transition-all">
+                        Настроить сейчас
+                    </button>
+</div>
+<div class="absolute -right-20 -bottom-20 w-80 h-80 wealth-spark rounded-full opacity-30"></div>
+</div>
+<div class="w-full lg:w-1/3 rounded-[32px] bg-surface-container p-10 flex flex-col justify-between border border-outline-variant/10">
+<div>
+<span class="material-symbols-outlined text-tertiary text-4xl mb-4" data-icon="receipt_long">receipt_long</span>
+<h3 class="text-xl font-bold mb-2">Мои квитанции</h3>
+<p class="text-on-surface-variant">Все счета за квартиру и налоги в одном месте.</p>
+</div>
+<div class="mt-8 flex items-baseline gap-2">
+<span class="text-3xl font-bold text-on-surface">0</span>
+<span class="text-on-surface-variant">новых счетов</span>
+</div>
+</div>
+</section>
+<!-- Recent Transactions Tonal Depth Section -->
+<section class="bg-surface-container-low rounded-[32px] p-8 md:p-12">
+<div class="flex justify-between items-center mb-10">
+<h2 class="text-2xl font-bold">Недавние платежи</h2>
+<button class="text-primary font-medium hover:underline">Все операции</button>
+</div>
+<div class="space-y-8">
+<!-- Transaction 1 -->
+<div class="flex items-center justify-between p-4 rounded-2xl bg-surface-container-lowest hover:bg-surface-container transition-colors group">
+<div class="flex items-center gap-6">
+<div class="w-14 h-14 rounded-full bg-surface-container-highest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-2xl" data-icon="wifi">wifi</span>
+</div>
+<div>
+<p class="font-bold text-lg">Дом.ру</p>
+<p class="text-on-surface-variant text-sm">Интернет и ТВ • 12 Окт 2023</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-bold text-lg">- 850,00 ₽</p>
+<p class="text-on-surface-variant text-sm">Карта •• 4402</p>
+</div>
+</div>
+<!-- Transaction 2 -->
+<div class="flex items-center justify-between p-4 rounded-2xl bg-surface-container-lowest hover:bg-surface-container transition-colors group">
+<div class="flex items-center gap-6">
+<div class="w-14 h-14 rounded-full bg-surface-container-highest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-2xl" data-icon="phone_iphone">phone_iphone</span>
+</div>
+<div>
+<p class="font-bold text-lg">МТС</p>
+<p class="text-on-surface-variant text-sm">Мобильная связь • 10 Окт 2023</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-bold text-lg">- 450,00 ₽</p>
+<p class="text-on-surface-variant text-sm">Карта •• 4402</p>
+</div>
+</div>
+<!-- Transaction 3 -->
+<div class="flex items-center justify-between p-4 rounded-2xl bg-surface-container-lowest hover:bg-surface-container transition-colors group">
+<div class="flex items-center gap-6">
+<div class="w-14 h-14 rounded-full bg-surface-container-highest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-2xl" data-icon="electric_bolt">electric_bolt</span>
+</div>
+<div>
+<p class="font-bold text-lg">Петроэлектросбыт</p>
+<p class="text-on-surface-variant text-sm">Электроэнергия • 05 Окт 2023</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-bold text-lg">- 1 240,15 ₽</p>
+<p class="text-on-surface-variant text-sm">Счет •• 8910</p>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Shell -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-[24px] bg-[#041329]/60 backdrop-blur-xl dark:bg-[#041329]/60 shadow-[0_-4px_40px_rgba(0,0,0,0.4)] md:hidden">
+<div class="fixed bottom-0 w-full flex justify-around items-center px-4 pb-6 pt-2">
+<!-- Главная -->
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="home">home</span>
+<span class="font-['Inter'] text-[10px] font-medium">Главная</span>
+</a>
+<!-- Переводы -->
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="sync_alt">sync_alt</span>
+<span class="font-['Inter'] text-[10px] font-medium">Переводы</span>
+</a>
+<!-- Платежи (ACTIVE) -->
+<a class="flex flex-col items-center justify-center text-[#4cd6fb] bg-[#112036] rounded-2xl p-2 active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="payments">payments</span>
+<span class="font-['Inter'] text-[10px] font-medium">Платежи</span>
+</a>
+<!-- Мониторинг -->
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="analytics">analytics</span>
+<span class="font-['Inter'] text-[10px] font-medium">Мониторинг</span>
+</a>
+<!-- Все сервисы -->
+<a class="flex flex-col items-center justify-center text-[#bcc9ce] p-2 hover:text-[#4cd6fb] active:scale-90 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="apps">apps</span>
+<span class="font-['Inter'] text-[10px] font-medium">Все сервисы</span>
+</a>
+</div>
+</nav>
+<!-- Desktop Sidebar/Nav (Simulation for md:flex) -->
+<div class="hidden md:flex fixed left-0 top-24 bottom-0 w-24 flex-col items-center gap-8 py-8 bg-surface-container-low border-r border-outline-variant/10">
+<a class="group relative" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary" data-icon="home">home</span>
+<span class="absolute left-full ml-4 px-2 py-1 rounded bg-surface-container-highest text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Главная</span>
+</a>
+<a class="group relative" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary" data-icon="sync_alt">sync_alt</span>
+<span class="absolute left-full ml-4 px-2 py-1 rounded bg-surface-container-highest text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Переводы</span>
+</a>
+<a class="group relative bg-surface-container p-3 rounded-2xl" href="#">
+<span class="material-symbols-outlined text-primary" data-icon="payments">payments</span>
+<span class="absolute left-full ml-4 px-2 py-1 rounded bg-surface-container-highest text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Платежи</span>
+</a>
+<a class="group relative" href="#">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary" data-icon="analytics">analytics</span>
+<span class="absolute left-full ml-4 px-2 py-1 rounded bg-surface-container-highest text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Мониторинг</span>
+</a>
+</div>
+</body></html>
