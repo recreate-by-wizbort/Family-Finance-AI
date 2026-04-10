@@ -30,12 +30,27 @@ function pointOnCircle(cx, cy, radius, angleDeg) {
   }
 }
 
-function describeArcPath(cx, cy, radius, startAngle, endAngle) {
+function toRingAngle(percent, isClockwise = true) {
+  const clampedPercent = Math.min(100, Math.max(0, percent))
+  const angle = (clampedPercent / 100) * 360
+
+  if (isClockwise) {
+    return angle
+  }
+
+  return (360 - angle) % 360
+}
+
+function describeArcPath(cx, cy, radius, startAngle, endAngle, isClockwise = true) {
   const start = pointOnCircle(cx, cy, radius, startAngle)
   const end = pointOnCircle(cx, cy, radius, endAngle)
-  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0
+  const clockwiseSweep = ((endAngle - startAngle) % 360 + 360) % 360
+  const sweep = isClockwise ? clockwiseSweep : (360 - clockwiseSweep) % 360
+  const normalizedSweep = sweep === 0 ? 360 : sweep
+  const largeArcFlag = normalizedSweep > 180 ? 1 : 0
+  const sweepFlag = isClockwise ? 1 : 0
 
-  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${end.x} ${end.y}`
 }
 
 function isMobileDevice() {
@@ -66,9 +81,20 @@ const CATEGORY_ICON_MAP = {
   other: 'more_horiz',
 }
 
+const CATEGORY_RING_COLOR_OVERRIDES = {
+  restaurants: '#ff8a1f',
+  transport: '#3b82f6',
+  entertainment: '#f5c51f',
+}
+
 const MAIN_RING_RADIUS = 99
 const MAIN_RING_STROKE_WIDTH = 34
 const ICON_GLYPH_SIZE = Math.round(MAIN_RING_STROKE_WIDTH * 0.6)
+const PERCENT_LABEL_RADIUS = 144
+const PERCENT_LABEL_BOX_WIDTH = 66
+const RING_BOUNDARY_GAP_PERCENT = 1.1
+const RING_SEAM_GAP_PERCENT = 1.4
+const RING_DRAW_CLOCKWISE = true
 const DONUT_HOLE_SIZE = 164
 const SIDE_PREVIEW_SIZE = 204
 const SIDE_PREVIEW_OFFSET = -153
@@ -121,14 +147,16 @@ export default function MonitoringPage() {
           share: (amount / (total || 1)) * 100,
           percent: roundPercent((amount / (total || 1)) * 100),
           label: CATEGORIES[category]?.label || category,
-          color: CATEGORIES[category]?.color || '#4cd6fb',
+          color: CATEGORY_RING_COLOR_OVERRIDES[category] || CATEGORIES[category]?.color || '#4cd6fb',
           emoji: CATEGORIES[category]?.emoji || '•',
           icon: CATEGORY_ICON_MAP[category] || CATEGORY_ICON_MAP.other,
         }))
         .sort((a, b) => b.amount - a.amount)
 
         const metrics = (() => {
-          const ringSegments = segments.filter((segment) => segment.share >= 4)
+          const ringSegments = segments
+            .filter((segment) => segment.share >= 4)
+            .sort((a, b) => b.share - a.share)
 
           if (!isUnlocked || ringSegments.length === 0) {
             return []
@@ -137,48 +165,102 @@ export default function MonitoringPage() {
           const chartSize = 320
           const center = chartSize / 2
           const arcRadius = MAIN_RING_RADIUS
-          const gapSize = ringSegments.length > 8 ? 0.45 : 0.7
+          const boundaryHalfGap = RING_BOUNDARY_GAP_PERCENT / 2
+          const seamHalfGap = RING_SEAM_GAP_PERCENT / 2
           let cursor = 0
 
-          return ringSegments.map((segment) => {
+          const rawMetrics = ringSegments.map((segment, index) => {
             const start = cursor
             const end = Math.min(100, cursor + segment.share)
             cursor = end
 
-            const halfGap = segment.share > gapSize * 1.7 ? gapSize / 2 : 0
-            const paintedStart = start + halfGap
-            const paintedEnd = end - halfGap
-            const arcStart = Math.max(0, Math.min(paintedStart, paintedEnd))
-            const arcEnd = Math.max(arcStart + 0.15, Math.max(paintedStart, paintedEnd))
+            const isFirstSegment = index === 0
+            const isLastSegment = index === ringSegments.length - 1
+            const startGap = isFirstSegment ? seamHalfGap : boundaryHalfGap
+            const endGap = isLastSegment ? seamHalfGap : boundaryHalfGap
+
+            let arcStart = start + startGap
+            let arcEnd = end - endGap
+
+            const availableSweep = end - start
+            const minSweep = Math.min(0.24, Math.max(0.08, availableSweep * 0.6))
+
+            if (arcEnd - arcStart < minSweep) {
+              const middle = start + availableSweep / 2
+              arcStart = middle - minSweep / 2
+              arcEnd = middle + minSweep / 2
+            }
 
             const centerPercent = arcStart + (arcEnd - arcStart) / 2
-            const centerAngleDeg = centerPercent * 3.6
+            const centerAngleDeg = toRingAngle(centerPercent, RING_DRAW_CLOCKWISE)
 
-            const labelRadius = 146
+            const labelRadius = PERCENT_LABEL_RADIUS
             const iconRadius = MAIN_RING_RADIUS
             const labelPoint = pointOnCircle(center, center, labelRadius, centerAngleDeg)
 
-            const startAngleDeg = arcStart * 3.6
-            const endAngleDeg = arcEnd * 3.6
+            const startAngleDeg = toRingAngle(arcStart, RING_DRAW_CLOCKWISE)
+            const endAngleDeg = toRingAngle(arcEnd, RING_DRAW_CLOCKWISE)
+            const arcSweepDeg = ((endAngleDeg - startAngleDeg) % 360 + 360) % 360
             const iconSize = ICON_GLYPH_SIZE
-            const iconAngleDeg = endAngleDeg - 0.2
+            const iconAngleDeg = RING_DRAW_CLOCKWISE ? endAngleDeg - 0.2 : endAngleDeg + 0.2
             const iconPoint = pointOnCircle(center, center, iconRadius, iconAngleDeg)
 
             return {
               ...segment,
               startDeg: startAngleDeg,
               endDeg: endAngleDeg,
-              arcPath: describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg),
+              centerAngleDeg,
+              arcPath: describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg, RING_DRAW_CLOCKWISE),
               labelX: labelPoint.x,
               labelY: labelPoint.y,
+              adjustedLabelY: labelPoint.y,
               iconX: iconPoint.x,
               iconY: iconPoint.y,
               iconSize,
               showPercent: true,
-              showIcon: true,
-              showArc: endAngleDeg - startAngleDeg >= 0.8,
+              showIcon: arcSweepDeg >= 14,
+              showArc: arcSweepDeg >= 0.8,
+              leaderStartX: 0,
+              leaderStartY: 0,
             }
           })
+
+          const MIN_LABEL_GAP = 18
+          const rightGroup = rawMetrics.filter(m => m.labelX >= center)
+          const leftGroup = rawMetrics.filter(m => m.labelX < center)
+
+          function spreadLabels(group) {
+            if (group.length <= 1) return
+            group.sort((a, b) => a.adjustedLabelY - b.adjustedLabelY)
+            for (let pass = 0; pass < 12; pass++) {
+              let stable = true
+              for (let i = 1; i < group.length; i++) {
+                const gap = group[i].adjustedLabelY - group[i - 1].adjustedLabelY
+                if (gap < MIN_LABEL_GAP) {
+                  const push = (MIN_LABEL_GAP - gap) / 2
+                  group[i - 1].adjustedLabelY -= push
+                  group[i].adjustedLabelY += push
+                  stable = false
+                }
+              }
+              if (stable) break
+            }
+            group.forEach(m => {
+              m.adjustedLabelY = Math.max(8, Math.min(chartSize - 8, m.adjustedLabelY))
+            })
+          }
+
+          spreadLabels(rightGroup)
+          spreadLabels(leftGroup)
+
+          const leaderRadius = MAIN_RING_RADIUS + MAIN_RING_STROKE_WIDTH / 2 + 3
+          rawMetrics.forEach(m => {
+            const anchor = pointOnCircle(center, center, leaderRadius, m.centerAngleDeg)
+            m.leaderStartX = anchor.x
+            m.leaderStartY = anchor.y
+          })
+
+          return rawMetrics
         })()
 
       return {
@@ -353,6 +435,8 @@ export default function MonitoringPage() {
   const renderRingLayer = (snapshot, layerKey, layerStyle) => {
     const layerMetrics = snapshot?.metrics ?? []
     const layerMonthLabel = snapshot?.label ?? 'Месяц'
+    const arcRenderMetrics = [...layerMetrics].sort((a, b) => a.startDeg - b.startDeg)
+    const maxPercentValue = layerMetrics.reduce((max, segment) => Math.max(max, segment.percent), 0) || 1
 
     return (
       <div
@@ -374,7 +458,7 @@ export default function MonitoringPage() {
               strokeWidth={MAIN_RING_STROKE_WIDTH}
             />
 
-          {layerMetrics.map((segment) =>
+          {arcRenderMetrics.map((segment) =>
             segment.showArc ? (
               <path
                 key={`${layerKey}-arc-${segment.category}`}
@@ -384,6 +468,21 @@ export default function MonitoringPage() {
                 strokeWidth={MAIN_RING_STROKE_WIDTH}
                 strokeLinecap="round"
                 style={{ filter: `drop-shadow(0 0 10px ${segment.color}33)` }}
+              />
+            ) : null,
+          )}
+
+          {layerMetrics.map((segment) =>
+            segment.showPercent ? (
+              <line
+                key={`${layerKey}-leader-${segment.category}`}
+                x1={segment.leaderStartX}
+                y1={segment.leaderStartY}
+                x2={segment.labelX}
+                y2={segment.adjustedLabelY}
+                stroke={segment.color}
+                strokeWidth="0.75"
+                strokeOpacity="0.4"
               />
             ) : null,
           )}
@@ -408,12 +507,12 @@ export default function MonitoringPage() {
               className="absolute font-medium tracking-tight text-[#95a2b1]"
               style={{
                 left: `${segment.labelX}px`,
-                top: `${segment.labelY}px`,
+                top: `${segment.adjustedLabelY}px`,
                 transform: 'translate(-50%, -50%)',
-                fontSize:
-                    segment.share >= 20
-                      ? 'clamp(14px, 1.7vw, 21px)'
-                      : 'clamp(12px, 1.45vw, 17.5px)',
+                width: `${PERCENT_LABEL_BOX_WIDTH}px`,
+                textAlign: 'center',
+                lineHeight: 1,
+                fontSize: `calc(clamp(12px, 1.45vw, 17.5px) * ${(1 + Math.min(1, segment.percent / maxPercentValue) * 0.1).toFixed(3)})`,
               }}
             >
               {segment.percent}%
