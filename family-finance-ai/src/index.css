@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200;400;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+@import "tailwindcss";
+
+:root {
+  color: #d6e3ff;
+  background: #041329;
+  font-family: 'Inter', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #041329;
+  color: #d6e3ff;
+}
+
+.font-headline {
+  font-family: 'Manrope', sans-serif;
+}
+
+.font-body,
+.font-label {
+  font-family: 'Inter', sans-serif;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  line-height: 1;
+}
+
+.gold-halo {
+  background: radial-gradient(circle, rgba(76, 214, 251, 0.15) 0%, rgba(4, 19, 41, 0) 70%);
+  border: 1px solid rgba(76, 214, 251, 0.1);
+}
+
+.obsidian-overlay {
+  background: linear-gradient(180deg, rgba(4, 19, 41, 0.8) 0%, rgba(4, 19, 41, 0.95) 100%);
+}
+
+.main-card-gradient {
+  background: linear-gradient(135deg, #4cd6fb 0%, #00b4d8 100%);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
