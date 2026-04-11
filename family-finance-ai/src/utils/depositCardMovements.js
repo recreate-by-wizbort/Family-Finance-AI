@@ -47,7 +47,7 @@ export function buildDepositOutMovement(card, amountInCardCurrency, description,
   }
 }
 
-export function buildDepositInMovement(card, amountInCardCurrency, description) {
+export function buildDepositInMovement(card, amountInCardCurrency, description, merchant = 'Вклад') {
   const id = `dcm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
   const ts = new Date().toISOString()
   if (card.foreignCurrency) {
@@ -57,7 +57,7 @@ export function buildDepositInMovement(card, amountInCardCurrency, description) 
       direction: 'in',
       amountForeign: Math.round(amountInCardCurrency * 100) / 100,
       currency: card.foreignCurrency,
-      merchant: 'Вклад',
+      merchant,
       description,
     }
   }
@@ -66,7 +66,7 @@ export function buildDepositInMovement(card, amountInCardCurrency, description) 
     timestamp: ts,
     direction: 'in',
     amountUzs: Math.round(amountInCardCurrency * 100) / 100,
-    merchant: 'Вклад',
+    merchant,
     description,
   }
 }

@@ -5,6 +5,7 @@ import AppTopBar from '../components/AppTopBar'
 import AddFavoriteRecipientSheet from '../components/AddFavoriteRecipientSheet'
 import AllFavoritesContactsSheet from '../components/AllFavoritesContactsSheet'
 import AllTransferHistorySheet from '../components/AllTransferHistorySheet'
+import BetweenOwnCardsSheet from '../components/BetweenOwnCardsSheet'
 import CardTransferSheet from '../components/CardTransferSheet'
 import ComingSoonSheet from '../components/ComingSoonSheet'
 import MovementDetailSheet from '../components/MovementDetailSheet'
@@ -20,6 +21,7 @@ import { computeAllUserCards } from '../utils/buildHomeUserCardsList'
 import { loadCardBalanceDeltas, saveCardBalanceDeltas } from '../utils/cardBalanceDeltas'
 import {
   appendDepositCardMovement,
+  buildDepositInMovement,
   buildDepositOutMovement,
   loadDepositCardMovements,
 } from '../utils/depositCardMovements'
@@ -56,6 +58,7 @@ export default function TransferPage() {
   const [pinnedRecipient, setPinnedRecipient] = useState(null)
   const [comingSoonOpen, setComingSoonOpen] = useState(false)
   const [comingSoonTitle, setComingSoonTitle] = useState('')
+  const [betweenOwnOpen, setBetweenOwnOpen] = useState(false)
 
   const favoritesDisplay = useMemo(() => dedupeFavoriteRecipientsList(favorites), [favorites])
   const favoritesPreview = useMemo(() => favoritesDisplay.slice(0, 2), [favoritesDisplay])
@@ -150,6 +153,37 @@ export default function TransferPage() {
     [allUserCards],
   )
 
+  const handleBetweenOwnTransferComplete = useCallback(
+    ({ sourceId, destId, sourceCard, destCard, debitSource, creditDest }) => {
+      setCardBalanceDeltas((prev) => {
+        const next = {
+          ...prev,
+          [sourceId]: (prev[sourceId] ?? 0) - debitSource,
+          [destId]: (prev[destId] ?? 0) + creditDest,
+        }
+        saveCardBalanceDeltas(next)
+        return next
+      })
+      const movOut = buildDepositOutMovement(
+        sourceCard,
+        debitSource,
+        `На «${destCard.sheetTitle}» · •••• ${destCard.last4}`,
+        'Между своими',
+      )
+      const movIn = buildDepositInMovement(
+        destCard,
+        creditDest,
+        `С «${sourceCard.sheetTitle}» · •••• ${sourceCard.last4}`,
+        'Между своими',
+      )
+      setLinkedMovementsByCardId((prev) => {
+        const afterOut = appendDepositCardMovement(prev, sourceId, movOut)
+        return appendDepositCardMovement(afterOut, destId, movIn)
+      })
+    },
+    [],
+  )
+
   const openPhoneTransfer = useCallback(() => {
     setPinnedRecipient(null)
     setPreselectedId(null)
@@ -218,11 +252,11 @@ export default function TransferPage() {
 
             <button
               type="button"
-              disabled
-              className="flex h-full min-h-[5.25rem] w-full items-center gap-4 rounded-3xl border border-[#1c2a41] bg-[#112036] px-4 py-4 text-left opacity-55 sm:px-5 sm:py-5"
+              onClick={() => setBetweenOwnOpen(true)}
+              className="flex h-full min-h-[5.25rem] w-full items-center gap-4 rounded-3xl border border-[#1c2a41] bg-[#112036] px-4 py-4 text-left transition-colors hover:border-[#4cd6fb]/30 hover:bg-[#1c2a41] sm:px-5 sm:py-5"
             >
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0d1c32] sm:h-[3.25rem] sm:w-[3.25rem]">
-                <span className="material-symbols-outlined text-[30px] text-[#b9c7e4] sm:text-[32px]">sync_alt</span>
+                <span className="material-symbols-outlined text-[30px] text-[#4cd6fb] sm:text-[32px]">sync_alt</span>
               </span>
               <div className="min-w-0 flex-1">
                 <h3 className="text-base font-bold leading-tight text-[#d6e3ff] sm:text-lg">Между своими</h3>
@@ -386,6 +420,14 @@ export default function TransferPage() {
         pinnedRecipient={pinnedRecipient}
         onAddToFavorites={() => setFavorites(loadFavoriteRecipients())}
         onTransferComplete={handleTransferComplete}
+      />
+
+      <BetweenOwnCardsSheet
+        isOpen={betweenOwnOpen}
+        onClose={() => setBetweenOwnOpen(false)}
+        allUserCards={allUserCards}
+        rates={rates}
+        onComplete={handleBetweenOwnTransferComplete}
       />
 
       <AddFavoriteRecipientSheet

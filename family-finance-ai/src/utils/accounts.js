@@ -8,10 +8,36 @@ export const ACCOUNT_MIN_AMOUNTS = {
   EUR: 0,
 }
 
+/** 16 цифр — отображается как номер счёта (как PAN). */
+export function generateAccountNumberDigits() {
+  let s = ''
+  for (let i = 0; i < 16; i += 1) {
+    s += Math.floor(Math.random() * 10)
+  }
+  return s
+}
+
 export function loadUserAccounts() {
   try {
     const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
+    const list = raw ? JSON.parse(raw) : []
+    if (!Array.isArray(list)) return []
+    let mutated = false
+    const fixed = list.map((a) => {
+      const next = { ...a }
+      if (!String(next.label ?? '').trim()) {
+        next.label = 'Счёт'
+        mutated = true
+      }
+      const digits = String(next.accountNumber ?? '').replace(/\D/g, '')
+      if (digits.length < 12) {
+        next.accountNumber = generateAccountNumberDigits()
+        mutated = true
+      }
+      return next
+    })
+    if (mutated) saveUserAccounts(fixed)
+    return fixed
   } catch {
     return []
   }
@@ -21,10 +47,15 @@ export function saveUserAccounts(accounts) {
   localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts))
 }
 
-export function createAccount({ currency, amount, cardId }) {
+export function createAccount({ label, currency, amount, cardId, accountNumber }) {
   const now = new Date()
+  const digits = accountNumber && String(accountNumber).replace(/\D/g, '').length >= 12
+    ? String(accountNumber).replace(/\D/g, '').slice(0, 20)
+    : generateAccountNumberDigits()
   return {
     id: `uacc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    label: String(label ?? '').trim() || 'Счёт',
+    accountNumber: digits,
     currency,
     amount,
     initialAmount: amount,

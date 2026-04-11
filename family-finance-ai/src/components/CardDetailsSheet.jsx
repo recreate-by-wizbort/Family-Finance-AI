@@ -140,14 +140,20 @@ export default function CardDetailsSheet({
     return () => window.removeEventListener('click', onClick)
   }, [menuOpen])
 
+  /** Актуальный баланс и реквизиты из списка (учёт cardBalanceDeltas), а не снимок с момента клика */
+  const resolvedCard = useMemo(() => {
+    if (!card?.id) return null
+    return allUserCards.find((c) => c.id === card.id) ?? card
+  }, [card, allUserCards])
+
   const movements = useMemo(
-    () => getMergedRawMovementsForCard(card, linkedMovementsByCardId),
-    [card, linkedMovementsByCardId],
+    () => getMergedRawMovementsForCard(resolvedCard, linkedMovementsByCardId),
+    [resolvedCard, linkedMovementsByCardId],
   )
 
   const movementsWithBalance = useMemo(
-    () => (card ? withBalanceAfter(card, movements) : []),
-    [movements, card],
+    () => (resolvedCard ? withBalanceAfter(resolvedCard, movements) : []),
+    [movements, resolvedCard],
   )
 
   const globalSearchRows = useMemo(() => {
@@ -182,6 +188,12 @@ export default function CardDetailsSheet({
     return rows.slice(0, 100)
   }, [allUserCards, movementSearchQuery, linkedMovementsByCardId])
 
+  const selectedMovementResolved = useMemo(() => {
+    if (!selectedMovement) return null
+    const hit = movementsWithBalance.find((m) => m.id === selectedMovement.id)
+    return hit ?? selectedMovement
+  }, [selectedMovement, movementsWithBalance])
+
   const filtered = useMemo(() => {
     if (tab === 'in') return movementsWithBalance.filter((m) => m.direction === 'in')
     if (tab === 'out') return movementsWithBalance.filter((m) => m.direction === 'out')
@@ -198,7 +210,7 @@ export default function CardDetailsSheet({
 
   const handlePickMovementRow = (targetCard, m) => {
     setMovementSearchQuery('')
-    if (targetCard.id !== card.id) {
+    if (targetCard.id !== resolvedCard?.id) {
       if (!onSelectCard) return
       setPendingOpenAfterCardSwitch({ cardId: targetCard.id, movement: m })
       onSelectCard(targetCard)
@@ -209,12 +221,14 @@ export default function CardDetailsSheet({
 
   if (!isOpen || !card) return null
 
-  const panDisplay = isUnlocked ? formatPanGroups(card.pan) : `•••• •••• •••• ${card.last4}`
-  const expiryDisplay = isUnlocked ? card.expires : '••/••'
+  const activeCard = resolvedCard ?? card
+  const isAccount = activeCard.kind === 'account'
+  const panDisplay = isUnlocked ? formatPanGroups(activeCard.pan) : `•••• •••• •••• ${activeCard.last4}`
+  const expiryDisplay = isUnlocked ? activeCard.expires : '••/••'
   const canManage = Boolean(onRename || onDelete || onSetPrimary)
 
   const handleStartRename = () => {
-    setRenameValue(card.sheetTitle ?? '')
+    setRenameValue(activeCard.sheetTitle ?? '')
     setRenaming(true)
     setMenuOpen(false)
   }
@@ -222,7 +236,7 @@ export default function CardDetailsSheet({
   const handleSaveRename = () => {
     const v = renameValue.trim()
     if (v && onRename) {
-      onRename(card.id, v)
+      onRename(activeCard.id, v)
     }
     setRenaming(false)
   }
@@ -233,7 +247,7 @@ export default function CardDetailsSheet({
   }
 
   const handleConfirmDelete = () => {
-    if (onDelete) onDelete(card)
+    if (onDelete) onDelete(activeCard)
     setConfirmDelete(false)
     requestClose()
   }
@@ -244,10 +258,10 @@ export default function CardDetailsSheet({
     onClose()
   }
 
-  const canDelete = card.kind === 'linked' || card.kind === 'account'
+  const canDelete = activeCard.kind === 'linked' || activeCard.kind === 'account'
 
   const handleSetPrimary = () => {
-    if (onSetPrimary) onSetPrimary(card.id)
+    if (onSetPrimary) onSetPrimary(activeCard.id)
     setMenuOpen(false)
   }
 
@@ -276,7 +290,7 @@ export default function CardDetailsSheet({
             className="font-headline pr-4 text-lg font-bold leading-snug text-[#d6e3ff]"
             id="card-sheet-title"
           >
-            {card.sheetTitle}
+            {activeCard.sheetTitle}
             {isPrimary ? (
               <span className="ml-2 inline-block rounded-full bg-[#4cd6fb]/15 px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider text-[#4cd6fb]">
                 ОСНОВНАЯ
@@ -296,7 +310,7 @@ export default function CardDetailsSheet({
           {/* Card details */}
           <section className="relative mb-4 shrink-0 rounded-2xl border border-[#4cd6fb]/15 bg-[#112036] p-4">
             <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-[#4cd6fb]/80">
-              Реквизиты карты
+              {isAccount ? 'Реквизиты счёта' : 'Реквизиты карты'}
             </p>
 
             {/* 3-dot menu */}
@@ -309,7 +323,7 @@ export default function CardDetailsSheet({
                     setMenuOpen((v) => !v)
                   }}
                   type="button"
-                  aria-label="Действия с картой"
+                  aria-label={isAccount ? 'Действия со счётом' : 'Действия с картой'}
                 >
                   <span className="material-symbols-outlined text-[20px]">more_vert</span>
                 </button>
@@ -346,7 +360,7 @@ export default function CardDetailsSheet({
                         type="button"
                       >
                         <span className="material-symbols-outlined text-[18px]">delete</span>
-                        Удалить карту
+                        {isAccount ? 'Удалить счёт' : 'Удалить карту'}
                       </button>
                     ) : null}
                   </div>
@@ -356,55 +370,64 @@ export default function CardDetailsSheet({
 
             <dl className="space-y-3 text-sm">
               <div>
-                <dt className="text-xs text-[#bcc9ce]">Номер карты</dt>
+                <dt className="text-xs text-[#bcc9ce]">
+                  {isAccount ? 'Номер счёта' : 'Номер карты'}
+                </dt>
                 <dd className="mt-1 break-all font-mono text-base tracking-wider text-[#d6e3ff]">
                   {panDisplay}
                 </dd>
               </div>
-              <div className="flex flex-wrap gap-8">
-                <div>
-                  <dt className="text-xs text-[#bcc9ce]">Срок действия</dt>
-                  <dd className="mt-1 font-mono text-[#d6e3ff]">{expiryDisplay}</dd>
-                </div>
+              {isAccount ? (
                 <div>
                   <dt className="text-xs text-[#bcc9ce]">Владелец</dt>
-                  <dd className="mt-1 text-[#d6e3ff]">{isUnlocked ? card.holderName : '•••••• ••••••'}</dd>
+                  <dd className="mt-1 text-[#d6e3ff]">{isUnlocked ? activeCard.holderName : '•••••• ••••••'}</dd>
                 </div>
-              </div>
+              ) : (
+                <div className="flex flex-wrap gap-8">
+                  <div>
+                    <dt className="text-xs text-[#bcc9ce]">Срок действия</dt>
+                    <dd className="mt-1 font-mono text-[#d6e3ff]">{expiryDisplay}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-[#bcc9ce]">Владелец</dt>
+                    <dd className="mt-1 text-[#d6e3ff]">{isUnlocked ? activeCard.holderName : '•••••• ••••••'}</dd>
+                  </div>
+                </div>
+              )}
             </dl>
           </section>
 
-          {/* Top-up / Withdraw buttons */}
-          {card.kind !== 'account' ? (
-            <div className="mb-4 flex shrink-0 gap-3">
-              {onTopUp ? (
-                <button
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#4cd6fb]/40 bg-[#003642]/60 py-2.5 text-sm font-bold text-[#4cd6fb] transition-colors hover:bg-[#003642]"
-                  onClick={() => onTopUp(card)}
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[18px]">add</span>
-                  Пополнить
-                </button>
-              ) : null}
-              {onWithdraw ? (
-                <button
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#1c2a41] bg-[#112036] py-2.5 text-sm font-bold text-[#d6e3ff] transition-colors hover:border-[#4cd6fb]/40 hover:bg-[#1c2a41]"
-                  onClick={() => onWithdraw(card)}
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[18px]">send</span>
-                  Снять
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+          {/* Top-up / Withdraw or transfer */}
+          <div className="mb-4 flex shrink-0 gap-3">
+            {onTopUp ? (
+              <button
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#4cd6fb]/40 bg-[#003642]/60 py-2.5 text-sm font-bold text-[#4cd6fb] transition-colors hover:bg-[#003642]"
+                onClick={() => onTopUp(activeCard)}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">add</span>
+                Пополнить
+              </button>
+            ) : null}
+            {onWithdraw ? (
+              <button
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#1c2a41] bg-[#112036] py-2.5 text-sm font-bold text-[#d6e3ff] transition-colors hover:border-[#4cd6fb]/40 hover:bg-[#1c2a41]"
+                onClick={() => onWithdraw(activeCard)}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {isAccount ? 'south_west' : 'send'}
+                </span>
+                {isAccount ? 'Снять' : 'Перевести'}
+              </button>
+            ) : null}
+          </div>
 
           {/* Rename dialog */}
           {renaming ? (
             <div className="mb-4 shrink-0 rounded-2xl border border-[#4cd6fb]/30 bg-[#0d1c32] p-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#bcc9ce]">
-                Новое название карты
+                {isAccount ? 'Новое название счёта' : 'Новое название карты'}
               </p>
               <input
                 autoFocus
@@ -439,10 +462,12 @@ export default function CardDetailsSheet({
           {confirmDelete ? (
             <div className="mb-4 shrink-0 rounded-2xl border border-[#ffb4ab]/40 bg-[#3b121c]/60 p-4">
               <p className="mb-3 text-sm font-semibold text-[#ffb4ab]">
-                Удалить карту «{card.sheetTitle}»?
+                {isAccount ? 'Удалить счёт' : 'Удалить карту'} «{activeCard.sheetTitle}»?
               </p>
               <p className="mb-4 text-xs text-[#bcc9ce]">
-                Это действие нельзя отменить. Карта будет удалена из списка.
+                {isAccount
+                  ? 'Это действие нельзя отменить. Счёт будет удалён из списка.'
+                  : 'Это действие нельзя отменить. Карта будет удалена из списка.'}
               </p>
               <div className="flex gap-2">
                 <button
@@ -466,7 +491,7 @@ export default function CardDetailsSheet({
           {/* Movements */}
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <p className="mb-2 shrink-0 text-xs font-bold uppercase tracking-[0.18em] text-[#4cd6fb]/90">
-              Движения по карте
+              {isAccount ? 'Движения по счёту' : 'Движения по карте'}
             </p>
             {allUserCards.length > 0 ? (
               <div className="relative mb-2 shrink-0">
@@ -474,7 +499,7 @@ export default function CardDetailsSheet({
                   <span className="material-symbols-outlined text-[20px]">search</span>
                 </span>
                 <input
-                  aria-label="Поиск операций по всем картам"
+                  aria-label="Поиск операций по всем картам и счетам"
                   className="w-full rounded-xl border border-[#1c2a41] bg-[#112036] py-2.5 pl-10 pr-3 text-sm text-[#d6e3ff] outline-none placeholder:text-[#5c6b73] focus:border-[#4cd6fb]/40"
                   placeholder="Поиск по всем картам и счетам"
                   type="search"
@@ -616,10 +641,10 @@ export default function CardDetailsSheet({
         </div>
       </div>
 
-      {selectedMovement ? (
+      {selectedMovementResolved ? (
         <MovementDetailSheet
-          card={card}
-          movement={selectedMovement}
+          card={activeCard}
+          movement={selectedMovementResolved}
           allMovements={movementsWithBalance}
           isUnlocked={isUnlocked}
           onClose={() => setSelectedMovement(null)}

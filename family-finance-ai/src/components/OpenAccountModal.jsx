@@ -15,14 +15,18 @@ function formatNum(n) {
 
 export default function OpenAccountModal({ isOpen, onClose, allUserCards, rates, onAccountCreated }) {
   const [currency, setCurrency] = useState('UZS')
+  const [accountName, setAccountName] = useState('')
   const [rawAmount, setRawAmount] = useState('')
   const [selectedCardId, setSelectedCardId] = useState('')
   const [isClosing, setIsClosing] = useState(false)
+
+  const amountDecimals = currency === 'UZS' ? 0 : 2
 
   useEffect(() => {
     if (isOpen) {
       setIsClosing(false)
       setCurrency('UZS')
+      setAccountName('')
       setRawAmount('')
       setSelectedCardId(allUserCards[0]?.id ?? '')
     }
@@ -75,11 +79,17 @@ export default function OpenAccountModal({ isOpen, onClose, allUserCards, rates,
     ? (selectedCard.balanceForeign ?? 0)
     : (selectedCard?.balanceUzs ?? 0)
 
-  const canSubmit = parsedAmount > 0 && amountInCardCurrency <= cardBalance
+  const nameOk = accountName.trim().length > 0
+  const canSubmit = nameOk && parsedAmount > 0 && amountInCardCurrency <= cardBalance
 
   const handleSubmit = () => {
     if (!canSubmit || !selectedCard) return
-    const acc = createAccount({ currency, amount: parsedAmount, cardId: selectedCard.id })
+    const acc = createAccount({
+      label: accountName.trim(),
+      currency,
+      amount: parsedAmount,
+      cardId: selectedCard.id,
+    })
     onAccountCreated(acc, selectedCard, amountInCardCurrency)
     requestClose()
   }
@@ -132,6 +142,18 @@ export default function OpenAccountModal({ isOpen, onClose, allUserCards, rates,
             </div>
           </div>
 
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#4cd6fb]/80">Название счёта</p>
+            <input
+              type="text"
+              className="w-full rounded-xl border border-[#1c2a41] bg-[#112036] px-4 py-3 text-sm font-semibold text-[#d6e3ff] outline-none placeholder:text-[#5c6b73] focus:border-[#4cd6fb]/50"
+              placeholder="Например, Накопительный"
+              maxLength={48}
+              value={accountName}
+              onChange={(e) => setAccountName(e.target.value)}
+            />
+          </div>
+
           <CardSourceSelect
             className="mb-0"
             label="Списать с карты"
@@ -149,7 +171,7 @@ export default function OpenAccountModal({ isOpen, onClose, allUserCards, rates,
               className="w-full rounded-xl border border-[#1c2a41] bg-[#112036] px-4 py-3 text-lg font-bold text-[#d6e3ff] outline-none focus:border-[#4cd6fb]/50"
               placeholder="0"
               value={rawAmount}
-              onChange={(e) => setRawAmount(formatGroupedAmountInput(e.target.value))}
+              onChange={(e) => setRawAmount(formatGroupedAmountInput(e.target.value, amountDecimals))}
             />
             {selectedCard ? (
               <p className="mt-1 text-[11px] text-[#5c6b73]">

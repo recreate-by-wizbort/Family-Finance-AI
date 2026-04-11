@@ -9,6 +9,11 @@ function formatNum(n, ccy = 'UZS') {
   })
 }
 
+function formatAccountNumber(value) {
+  const d = String(value ?? '').replace(/\D/g, '')
+  return d.replace(/(.{4})/g, '$1 ').trim() || '—'
+}
+
 export default function AccountDetailSheet({ account, allUserCards, rates, onClose, onTopUp, onWithdraw }) {
   const [isClosing, setIsClosing] = useState(false)
   const [action, setAction] = useState(null)
@@ -108,7 +113,9 @@ export default function AccountDetailSheet({ account, allUserCards, rates, onClo
         aria-modal="true"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-[#1c2a41] px-5 py-4">
-          <h2 className="font-headline text-lg font-bold text-[#d6e3ff]">Счёт ({ccy})</h2>
+          <h2 className="font-headline min-w-0 flex-1 truncate pr-2 text-lg font-bold text-[#d6e3ff]">
+            {account.label?.trim() ? account.label : `Счёт (${ccy})`}
+          </h2>
           <button
             className="flex h-10 w-10 items-center justify-center rounded-full text-[#bcc9ce] hover:bg-[#112036] hover:text-[#4cd6fb]"
             onClick={requestClose}
@@ -124,6 +131,9 @@ export default function AccountDetailSheet({ account, allUserCards, rates, onClo
             <p className="text-3xl font-extrabold text-[#d6e3ff]">{formatNum(account.amount, ccy)} {ccy}</p>
             <p className="mt-2 text-xs text-[#5c6b73]">
               Открыт {new Date(account.openedAt).toLocaleDateString('ru-RU')}
+            </p>
+            <p className="mt-3 font-mono text-xs tracking-wider text-[#bcc9ce]">
+              № {formatAccountNumber(account.accountNumber)}
             </p>
           </div>
 

@@ -148,6 +148,8 @@ export default function CardTopUpSheet({
 
   if (!isOpen || !targetCard) return null
 
+  const isAccountTarget = targetCard.kind === 'account'
+
   const tabs = [
     { id: 'card', label: 'Карта или счёт' },
     { id: 'deposit', label: 'Вклад' },
@@ -180,7 +182,7 @@ export default function CardTopUpSheet({
               className="font-headline text-lg font-bold leading-snug text-[#d6e3ff]"
               id="topup-sheet-title"
             >
-              Пополнение карты
+              {isAccountTarget ? 'Пополнение счёта' : 'Пополнение карты'}
             </h2>
             <p className="mt-0.5 truncate text-xs text-[#bcc9ce]">
               {targetCard.sheetTitle} · •••• {targetCard.last4}
@@ -210,7 +212,11 @@ export default function CardTopUpSheet({
 
               <div className="mb-5 shrink-0 rounded-2xl border border-[#4cd6fb]/15 bg-[#112036] p-4">
                 <p className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-[#4cd6fb]/80">
-                  {selectedType === 'deposit' ? 'Источник — вклад' : 'Источник — карта'}
+                  {selectedType === 'deposit'
+                    ? 'Источник — вклад'
+                    : isAccountTarget
+                      ? 'Источник — карта или счёт'
+                      : 'Источник — карта'}
                 </p>
                 <p className="text-sm font-semibold text-[#d6e3ff]">
                   {selectedType === 'deposit'
@@ -223,7 +229,7 @@ export default function CardTopUpSheet({
               </div>
 
               <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-[#bcc9ce]">
-                Сумма пополнения
+                {isAccountTarget ? 'Сумма зачисления на счёт' : 'Сумма пополнения'}
               </label>
               <div className="relative mb-2 shrink-0">
                 <input
@@ -257,7 +263,7 @@ export default function CardTopUpSheet({
                   type="button"
                 >
                   <span className="material-symbols-outlined text-[20px]">payments</span>
-                  Пополнить
+                  {isAccountTarget ? 'Пополнить счёт' : 'Пополнить'}
                 </button>
               </div>
             </div>

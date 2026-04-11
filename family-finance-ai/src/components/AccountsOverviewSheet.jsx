@@ -7,6 +7,11 @@ function formatNum(n, ccy = 'UZS') {
   })
 }
 
+function formatAccountNumber(value) {
+  const d = String(value ?? '').replace(/\D/g, '')
+  return d.replace(/(.{4})/g, '$1 ').trim() || '—'
+}
+
 export default function AccountsOverviewSheet({ accounts, isOpen, isUnlocked, onClose, onOpenNew, onSelectAccount }) {
   const [isClosing, setIsClosing] = useState(false)
 
@@ -81,9 +86,12 @@ export default function AccountsOverviewSheet({ accounts, isOpen, isUnlocked, on
                         <span className="material-symbols-outlined text-[20px]">account_balance</span>
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-[#d6e3ff]">Счёт ({acc.currency})</p>
+                        <p className="text-sm font-bold text-[#d6e3ff]">
+                          {acc.label?.trim() ? acc.label : `Счёт (${acc.currency})`}
+                        </p>
                         <p className="text-[11px] text-[#5c6b73]">
-                          Открыт {new Date(acc.openedAt).toLocaleDateString('ru-RU')}
+                          № {formatAccountNumber(acc.accountNumber)} · открыт{' '}
+                          {new Date(acc.openedAt).toLocaleDateString('ru-RU')}
                         </p>
                       </div>
                     </div>

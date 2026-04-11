@@ -16,11 +16,17 @@ import CurrencyRatesSheet from '../components/CurrencyRatesSheet'
 import PromotionsSheet from '../components/PromotionsSheet'
 import OfferDetailSheet from '../components/OfferDetailSheet'
 import CardTopUpSheet from '../components/CardTopUpSheet'
+import AccountWithdrawSheet from '../components/AccountWithdrawSheet'
 import CardTransferSheet from '../components/CardTransferSheet'
 import PaymentCardListRow from '../components/PaymentCardListRow'
 import UzsAmount from '../components/UzsAmount'
 import useExchangeRates from '../hooks/useExchangeRates'
-import { ACCOUNTS, LINKED_EXTERNAL_CARDS, PRIMARY_BANK_RECREATE } from '../mockData'
+import {
+  ACCOUNTS,
+  DEFAULT_CARDHOLDER_NAME,
+  LINKED_EXTERNAL_CARDS,
+  PRIMARY_BANK_RECREATE,
+} from '../mockData'
 import { isSessionUnlocked } from '../utils/sessionLock'
 import {
   loadPrimaryCardId,
@@ -94,6 +100,7 @@ export default function HomePage() {
   const [promotionsOpen, setPromotionsOpen] = useState(false)
   const [selectedOffer, setSelectedOffer] = useState(null)
   const [cardTopUpTarget, setCardTopUpTarget] = useState(null)
+  const [accountWithdrawTarget, setAccountWithdrawTarget] = useState(null)
   const [cardTransferOpen, setCardTransferOpen] = useState(false)
   const [cardTransferPreselected, setCardTransferPreselected] = useState(null)
   const [userAccounts, setUserAccounts] = useState(loadUserAccounts)
@@ -179,6 +186,10 @@ export default function HomePage() {
   }, [])
 
   const handleCardWithdraw = useCallback((card) => {
+    if (card.kind === 'account') {
+      setAccountWithdrawTarget(card)
+      return
+    }
     setSelectedCard(null)
     navigate('/transfers', {
       state: { unlocked: true, openTransfer: true, preselectedCardId: card.id, transferTab: 'card' },
@@ -194,6 +205,16 @@ export default function HomePage() {
   }, [])
 
   const handleRenameCard = useCallback((cardId, newName) => {
+    if (String(cardId).startsWith('uacc_')) {
+      setUserAccounts((prev) => {
+        const next = prev.map((a) => (a.id === cardId ? { ...a, label: newName } : a))
+        saveUserAccounts(next)
+        return next
+      })
+      setSelectedAccount((prev) =>
+        prev?.id === cardId ? { ...prev, label: newName } : prev,
+      )
+    }
     setRenamedLabels((prev) => ({ ...prev, [cardId]: newName }))
     setSelectedCard((prev) =>
       prev && prev.id === cardId ? { ...prev, sheetTitle: newName } : prev,
@@ -209,15 +230,17 @@ export default function HomePage() {
         card.bank ??
         (typeof card.detailLine === 'string' ? card.detailLine.split(' · ')[1] : '') ??
         ''
-      saveDeletedCard({
-        pan: card.pan,
-        userLabel: label,
-        bank: bankName,
-        expires: card.expires,
-        processingSystem: card.processingSystem,
-        holderName: card.holderName,
-        balanceUzs: card.balanceUzs,
-      })
+      if (!String(id).startsWith('uacc_')) {
+        saveDeletedCard({
+          pan: card.pan,
+          userLabel: label,
+          bank: bankName,
+          expires: card.expires,
+          processingSystem: card.processingSystem,
+          holderName: card.holderName,
+          balanceUzs: card.balanceUzs,
+        })
+      }
       if (card.kind === 'linked') {
         const isUserAdded = userLinkedCards.some((c) => c.id === id)
         if (isUserAdded) {
@@ -230,6 +253,13 @@ export default function HomePage() {
             return next
           })
         }
+      } else if (String(id).startsWith('uacc_')) {
+        setUserAccounts((prev) => {
+          const next = prev.filter((a) => a.id !== id)
+          saveUserAccounts(next)
+          return next
+        })
+        setSelectedAccount((prev) => (prev?.id === id ? null : prev))
       } else {
         setRemovedRowIds((prev) => {
           if (prev.includes(id)) return prev
@@ -335,8 +365,22 @@ export default function HomePage() {
       return next
     })
     applyCardDelta(card.id, -amountInCardCurrency)
-    const mov = buildDepositOutMovement(card, amountInCardCurrency, 'Открытие счёта')
-    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, mov))
+    const movOut = buildDepositOutMovement(card, amountInCardCurrency, 'Открытие счёта')
+    const destShape =
+      acc.currency === 'UZS' ? { id: acc.id } : { id: acc.id, foreignCurrency: acc.currency }
+    const movIn = buildDepositInMovement(
+      destShape,
+      acc.amount,
+      'Начальное пополнение',
+      'Открытие счёта',
+    )
+    setLinkedMovementsByCardId((prev) => {
+      const p = appendDepositCardMovement(prev, card.id, movOut)
+      return appendDepositCardMovement(p, acc.id, movIn)
+    })
+    setOpenAccountOpen(false)
+    setAccountsOverviewOpen(true)
+    setSelectedAccount(acc)
   }, [applyCardDelta])
 
   const handleAccountTopUp = useCallback((account, amount, card, amountInCardCurrency) => {
@@ -364,14 +408,77 @@ export default function HomePage() {
   }, [applyCardDelta])
 
   const handleCardTopUpComplete = useCallback((sourceId, sourceType, amount) => {
-    applyCardDelta(cardTopUpTarget.id, amount)
+    const target = cardTopUpTarget
+    const isUserUzsAccount = target?.id?.startsWith('uacc_') && !target.foreignCurrency
+    if (isUserUzsAccount) {
+      setUserAccounts((prev) => {
+        const next = prev.map((a) =>
+          a.id === target.id ? topUpAccount(a, amount, sourceId) : a,
+        )
+        saveUserAccounts(next)
+        return next
+      })
+    } else if (target) {
+      applyCardDelta(target.id, amount)
+    }
     applyCardDelta(sourceId, -amount)
-    const movIn = buildDepositInMovement(cardTopUpTarget, amount, `Пополнение с ${sourceType === 'deposit' ? 'вклада' : 'карты'}`)
-    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, cardTopUpTarget.id, movIn))
-    const movOut = buildDepositOutMovement({ id: sourceId }, amount, `Перевод на карту ${cardTopUpTarget.sheetTitle}`)
+    const movIn = buildDepositInMovement(
+      target,
+      amount,
+      `Пополнение с ${sourceType === 'deposit' ? 'вклада' : 'карты'}`,
+      target.kind === 'account' ? 'Пополнение счёта' : 'Пополнение',
+    )
+    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, target.id, movIn))
+    const destPhrase =
+      target.kind === 'account'
+        ? `счёт «${target.sheetTitle}»`
+        : `карту «${target.sheetTitle}»`
+    const movOut = buildDepositOutMovement({ id: sourceId }, amount, `Перевод на ${destPhrase}`)
     setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, sourceId, movOut))
     setCardTopUpTarget(null)
   }, [cardTopUpTarget, applyCardDelta])
+
+  const handleAccountWithdrawComplete = useCallback(
+    ({ accountRow, destCard, debitFromAccount, creditToDest }) => {
+      if (String(accountRow.id).startsWith('uacc_')) {
+        setUserAccounts((prev) => {
+          const next = prev.map((a) =>
+            a.id === accountRow.id ? withdrawFromAccount(a, debitFromAccount, destCard.id) : a,
+          )
+          saveUserAccounts(next)
+          return next
+        })
+        setCardBalanceDeltas((prev) => ({
+          ...prev,
+          [destCard.id]: (prev[destCard.id] ?? 0) + creditToDest,
+        }))
+      } else {
+        setCardBalanceDeltas((prev) => ({
+          ...prev,
+          [accountRow.id]: (prev[accountRow.id] ?? 0) - debitFromAccount,
+          [destCard.id]: (prev[destCard.id] ?? 0) + creditToDest,
+        }))
+      }
+      const movOut = buildDepositOutMovement(
+        accountRow,
+        debitFromAccount,
+        `На «${destCard.sheetTitle}» · •••• ${destCard.last4}`,
+        'Снятие со счёта',
+      )
+      const movIn = buildDepositInMovement(
+        destCard,
+        creditToDest,
+        `Со счёта «${accountRow.sheetTitle}»`,
+        'Пополнение со счёта',
+      )
+      setLinkedMovementsByCardId((prev) => {
+        const withOut = appendDepositCardMovement(prev, accountRow.id, movOut)
+        return appendDepositCardMovement(withOut, destCard.id, movIn)
+      })
+      setAccountWithdrawTarget(null)
+    },
+    [],
+  )
 
   const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems } =
     useMemo(() => {
@@ -475,13 +582,46 @@ export default function HomePage() {
     return [...otherLinkedBase, ...extra]
   }, [otherLinkedBase, userLinkedCards, renamedLabels])
 
+  const userAccountRows = useMemo(
+    () =>
+      userAccounts.map((acc) => {
+        const pan = String(acc.accountNumber ?? '').replace(/\D/g, '') || '0'.repeat(16)
+        const last4 = last4FromPan(pan)
+        const isFx = acc.currency && acc.currency !== 'UZS'
+        return {
+          id: acc.id,
+          kind: 'account',
+          bank: primaryBank,
+          sheetTitle: acc.label,
+          detailLine: `${last4} · ${primaryBank}`,
+          balanceUzs: isFx ? 0 : acc.amount ?? 0,
+          foreignCurrency: isFx ? acc.currency : null,
+          balanceForeign: isFx ? acc.amount ?? 0 : null,
+          processingSystem: 'ACCOUNT',
+          pan,
+          last4,
+          expires: '—',
+          holderName: DEFAULT_CARDHOLDER_NAME,
+          movementsAccountId: null,
+          linkedMovementsCardId: null,
+          isUserOpenedAccount: true,
+        }
+      }),
+    [userAccounts, primaryBank],
+  )
+
+  const allAccountItems = useMemo(
+    () => [...accountItems, ...userAccountRows],
+    [accountItems, userAccountRows],
+  )
+
   const visibleOrderedIds = useMemo(() => {
     const skip = (id) => removedRowIds.includes(id)
     const p = primaryLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id)
     const o = otherLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id)
-    const a = accountItems.filter((i) => !skip(i.id)).map((i) => i.id)
+    const a = allAccountItems.filter((i) => !skip(i.id)).map((i) => i.id)
     return [...p, ...o, ...a]
-  }, [primaryLinkedItems, otherLinkedItems, accountItems, removedRowIds])
+  }, [primaryLinkedItems, otherLinkedItems, allAccountItems, removedRowIds])
 
   const resolvedPrimaryId = useMemo(() => {
     if (visibleOrderedIds.length === 0) return null
@@ -531,7 +671,7 @@ export default function HomePage() {
   }, [otherLinkedItems, removedRowIds, renamedLabels, resolvedPrimaryId])
 
   const sortedAccountItems = useMemo(() => {
-    const items = accountItems
+    const items = allAccountItems
       .filter((item) => !removedRowIds.includes(item.id))
       .map((item) => ({
         ...item,
@@ -545,10 +685,11 @@ export default function HomePage() {
       }
     }
     return items
-  }, [accountItems, removedRowIds, renamedLabels, resolvedPrimaryId])
+  }, [allAccountItems, removedRowIds, renamedLabels, resolvedPrimaryId])
 
   const applyCardBalanceDelta = useCallback((c) => {
     if (!c) return c
+    if (c.isUserOpenedAccount) return c
     const d = cardBalanceDeltas[c.id]
     if (!d) return c
     if (c.foreignCurrency) {
@@ -1040,6 +1181,15 @@ export default function HomePage() {
         allUserCards={allUserCards}
         deposits={deposits}
         onTopUpComplete={handleCardTopUpComplete}
+      />
+
+      <AccountWithdrawSheet
+        accountRow={accountWithdrawTarget}
+        allUserCards={allUserCards}
+        isOpen={accountWithdrawTarget != null}
+        onClose={() => setAccountWithdrawTarget(null)}
+        onWithdrawComplete={handleAccountWithdrawComplete}
+        rates={rates}
       />
 
       <CardTransferSheet
