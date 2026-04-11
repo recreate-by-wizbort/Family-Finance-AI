@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
 import AddLinkedCardModal from '../components/AddLinkedCardModal'
@@ -9,10 +9,16 @@ import useExchangeRates from '../hooks/useExchangeRates'
 import { ACCOUNTS, LINKED_EXTERNAL_CARDS, PRIMARY_BANK_RECREATE } from '../mockData'
 import { isSessionUnlocked } from '../utils/sessionLock'
 import { getPaymentCardsTotalUzs } from '../utils'
+import {
+  loadPrimaryCardId,
+  loadRemovedRowIds,
+  persistPrimaryCardId,
+  persistRemovedRowIds,
+  saveDeletedCard,
+} from '../utils/deletedCards'
 
 const HOME_OWNER_ID = 'user_1'
 const PRIMARY_ACCOUNT_ID = 'acc_tbc_main'
-/** Счёт всегда в конце общего списка карт (после остальных счетов и привязанных карт). */
 const TRAILING_LIST_ACCOUNT_ID = 'acc_hamkor_current'
 
 function last4FromPan(pan) {
@@ -33,6 +39,71 @@ export default function HomePage() {
   const [selectedCard, setSelectedCard] = useState(null)
   const [userLinkedCards, setUserLinkedCards] = useState([])
   const [addCardOpen, setAddCardOpen] = useState(false)
+  const [primaryCardId, setPrimaryCardId] = useState(loadPrimaryCardId)
+  const [renamedLabels, setRenamedLabels] = useState({})
+  const [removedRowIds, setRemovedRowIds] = useState(loadRemovedRowIds)
+
+  const handleAddLinkedCard = useCallback((card) => {
+    setUserLinkedCards((prev) => [...prev, card])
+  }, [])
+
+  const handleCloseAddCard = useCallback(() => {
+    setAddCardOpen(false)
+  }, [])
+
+  const handleRenameCard = useCallback((cardId, newName) => {
+    setRenamedLabels((prev) => ({ ...prev, [cardId]: newName }))
+    setSelectedCard((prev) =>
+      prev && prev.id === cardId ? { ...prev, sheetTitle: newName } : prev,
+    )
+  }, [])
+
+  const handleDeleteCard = useCallback(
+    (card) => {
+      if (!card || (card.kind !== 'linked' && card.kind !== 'account')) return
+      const id = card.id
+      const label = renamedLabels[id] ?? card.sheetTitle
+      const bankName =
+        card.bank ??
+        (typeof card.detailLine === 'string' ? card.detailLine.split(' · ')[1] : '') ??
+        ''
+      saveDeletedCard({
+        pan: card.pan,
+        userLabel: label,
+        bank: bankName,
+        expires: card.expires,
+        processingSystem: card.processingSystem,
+        holderName: card.holderName,
+        balanceUzs: card.balanceUzs,
+      })
+      if (card.kind === 'linked') {
+        const isUserAdded = userLinkedCards.some((c) => c.id === id)
+        if (isUserAdded) {
+          setUserLinkedCards((prev) => prev.filter((c) => c.id !== id))
+        } else {
+          setRemovedRowIds((prev) => {
+            if (prev.includes(id)) return prev
+            const next = [...prev, id]
+            persistRemovedRowIds(next)
+            return next
+          })
+        }
+      } else {
+        setRemovedRowIds((prev) => {
+          if (prev.includes(id)) return prev
+          const next = [...prev, id]
+          persistRemovedRowIds(next)
+          return next
+        })
+      }
+    },
+    [renamedLabels, userLinkedCards],
+  )
+
+  const handleSetPrimary = useCallback((cardId) => {
+    setPrimaryCardId(cardId)
+    persistPrimaryCardId(cardId)
+  }, [])
 
   const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems, baseTotalUzs } =
     useMemo(() => {
@@ -52,6 +123,7 @@ export default function HomePage() {
         return {
           id: acc.id,
           kind: 'account',
+          bank: acc.bank,
           sheetTitle: acc.label,
           detailLine: `${last4} · ${acc.bank}`,
           balanceUzs: acc.balanceUzs ?? 0,
@@ -90,6 +162,7 @@ export default function HomePage() {
           id: card.id,
           kind: 'linked',
           sheetTitle: label,
+          bank: card.bank,
           detailLine: `${last4} · ${card.bank}`,
           balanceUzs,
           processingSystem: card.processingSystem,
@@ -122,7 +195,8 @@ export default function HomePage() {
     const extra = userLinkedCards.map((c) => ({
       id: c.id,
       kind: 'linked',
-      sheetTitle: c.userLabel?.trim() || 'Новая карта',
+      sheetTitle: renamedLabels[c.id] ?? c.userLabel?.trim() ?? 'Новая карта',
+      bank: c.bank,
       detailLine: `${last4FromPan(c.pan)} · ${c.bank}`,
       balanceUzs: c.balanceUzs,
       processingSystem: c.processingSystem,
@@ -134,10 +208,99 @@ export default function HomePage() {
       linkedMovementsCardId: c.id,
     }))
     return [...otherLinkedBase, ...extra]
-  }, [otherLinkedBase, userLinkedCards])
+  }, [otherLinkedBase, userLinkedCards, renamedLabels])
+
+  const visibleOrderedIds = useMemo(() => {
+    const skip = (id) => removedRowIds.includes(id)
+    const p = primaryLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id)
+    const o = otherLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id)
+    const a = accountItems.filter((i) => !skip(i.id)).map((i) => i.id)
+    return [...p, ...o, ...a]
+  }, [primaryLinkedItems, otherLinkedItems, accountItems, removedRowIds])
+
+  const resolvedPrimaryId = useMemo(() => {
+    if (visibleOrderedIds.length === 0) return null
+    if (primaryCardId != null && visibleOrderedIds.includes(primaryCardId)) return primaryCardId
+    return visibleOrderedIds[0]
+  }, [visibleOrderedIds, primaryCardId])
+
+  useEffect(() => {
+    persistPrimaryCardId(resolvedPrimaryId)
+    if (resolvedPrimaryId !== primaryCardId) {
+      setPrimaryCardId(resolvedPrimaryId)
+    }
+  }, [resolvedPrimaryId, primaryCardId])
+
+  const sortedPrimaryLinked = useMemo(() => {
+    const items = primaryLinkedItems
+      .filter((item) => !removedRowIds.includes(item.id))
+      .map((item) => ({
+        ...item,
+        sheetTitle: renamedLabels[item.id] ?? item.sheetTitle,
+      }))
+    if (resolvedPrimaryId) {
+      const idx = items.findIndex((i) => i.id === resolvedPrimaryId)
+      if (idx > 0) {
+        const [el] = items.splice(idx, 1)
+        items.unshift(el)
+      }
+    }
+    return items
+  }, [primaryLinkedItems, removedRowIds, renamedLabels, resolvedPrimaryId])
+
+  const sortedOtherLinked = useMemo(() => {
+    const items = otherLinkedItems
+      .filter((item) => !removedRowIds.includes(item.id))
+      .map((item) => ({
+        ...item,
+        sheetTitle: renamedLabels[item.id] ?? item.sheetTitle,
+      }))
+    if (resolvedPrimaryId) {
+      const idx = items.findIndex((i) => i.id === resolvedPrimaryId)
+      if (idx > 0) {
+        const [el] = items.splice(idx, 1)
+        items.unshift(el)
+      }
+    }
+    return items
+  }, [otherLinkedItems, removedRowIds, renamedLabels, resolvedPrimaryId])
+
+  const sortedAccountItems = useMemo(() => {
+    const items = accountItems
+      .filter((item) => !removedRowIds.includes(item.id))
+      .map((item) => ({
+        ...item,
+        sheetTitle: renamedLabels[item.id] ?? item.sheetTitle,
+      }))
+    if (resolvedPrimaryId) {
+      const idx = items.findIndex((i) => i.id === resolvedPrimaryId)
+      if (idx > 0) {
+        const [el] = items.splice(idx, 1)
+        items.unshift(el)
+      }
+    }
+    return items
+  }, [accountItems, removedRowIds, renamedLabels, resolvedPrimaryId])
+
+  const allUserCards = useMemo(
+    () => [...sortedPrimaryLinked, ...sortedOtherLinked, ...sortedAccountItems],
+    [sortedPrimaryLinked, sortedOtherLinked, sortedAccountItems],
+  )
+
+  const removedFromTotalUzs = useMemo(() => {
+    let sub = 0
+    for (const id of removedRowIds) {
+      const linked = LINKED_EXTERNAL_CARDS.find((c) => c.id === id)
+      if (linked) sub += Number(linked.balanceUzs ?? 0)
+      const acc = ACCOUNTS.find((a) => a.id === id)
+      if (acc && acc.currency === 'UZS') sub += Number(acc.balanceUzs ?? 0)
+    }
+    return sub
+  }, [removedRowIds])
 
   const totalPaymentUzs =
-    baseTotalUzs +
+    baseTotalUzs -
+    removedFromTotalUzs +
     userLinkedCards.reduce((sum, c) => sum + Number(c.balanceUzs), 0)
   const totalPaymentUzsRounded = Math.round(totalPaymentUzs * 100) / 100
 
@@ -208,19 +371,20 @@ export default function HomePage() {
 
           {detailsOpen ? (
             <div className="mt-4 space-y-6 rounded-3xl border border-[#4cd6fb]/15 bg-[#0a1628]/90 p-5 shadow-xl backdrop-blur-sm">
-              {primaryLinkedItems.length > 0 ? (
+              {sortedPrimaryLinked.length > 0 ? (
                 <div>
                   <h3 className="mb-3 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#4cd6fb]/90">
                     Карты {primaryBank}
                   </h3>
                   <ul className="space-y-3">
-                    {primaryLinkedItems.map((item) => (
+                    {sortedPrimaryLinked.map((item) => (
                       <PaymentCardListRow
                         key={item.id}
                         formatBalance={formatUzsBalance}
                         isUnlocked={isUnlocked}
                         item={item}
                         onSelect={setSelectedCard}
+                        isPrimary={item.id === resolvedPrimaryId}
                       />
                     ))}
                   </ul>
@@ -231,15 +395,16 @@ export default function HomePage() {
                 <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[#bcc9ce]">
                   Другие карты
                 </h3>
-                {otherLinkedItems.length > 0 ? (
+                {sortedOtherLinked.length > 0 ? (
                   <ul className="space-y-3">
-                    {otherLinkedItems.map((item) => (
+                    {sortedOtherLinked.map((item) => (
                       <PaymentCardListRow
                         key={item.id}
                         formatBalance={formatUzsBalance}
                         isUnlocked={isUnlocked}
                         item={item}
                         onSelect={setSelectedCard}
+                        isPrimary={item.id === resolvedPrimaryId}
                       />
                     ))}
                   </ul>
@@ -254,19 +419,20 @@ export default function HomePage() {
                 </button>
               </div>
 
-              {accountItems.length > 0 ? (
+              {sortedAccountItems.length > 0 ? (
                 <div>
                   <h3 className="mb-3 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#58d6f1]/90">
                     Счета {primaryBank}
                   </h3>
                   <ul className="space-y-3">
-                    {accountItems.map((item) => (
+                    {sortedAccountItems.map((item) => (
                       <PaymentCardListRow
                         key={item.id}
                         formatBalance={formatUzsBalance}
                         isUnlocked={isUnlocked}
                         item={item}
                         onSelect={setSelectedCard}
+                        isPrimary={item.id === resolvedPrimaryId}
                       />
                     ))}
                   </ul>
@@ -435,15 +601,21 @@ export default function HomePage() {
 
       <AddLinkedCardModal
         isOpen={addCardOpen}
-        onAdd={(card) => setUserLinkedCards((prev) => [...prev, card])}
-        onClose={() => setAddCardOpen(false)}
+        onAdd={handleAddLinkedCard}
+        onClose={handleCloseAddCard}
       />
 
       <CardDetailsSheet
+        allUserCards={allUserCards}
         card={selectedCard}
         isOpen={selectedCard != null}
         isUnlocked={isUnlocked}
         onClose={() => setSelectedCard(null)}
+        onRename={handleRenameCard}
+        onDelete={handleDeleteCard}
+        onSelectCard={setSelectedCard}
+        onSetPrimary={handleSetPrimary}
+        isPrimary={selectedCard != null && selectedCard.id === resolvedPrimaryId}
       />
     </div>
   )

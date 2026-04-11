@@ -7,7 +7,7 @@ function formatForeignAmount(amount) {
     .replace(',', '.')
 }
 
-export default function PaymentCardListRow({ formatBalance, isUnlocked, item, onSelect }) {
+export default function PaymentCardListRow({ formatBalance, isUnlocked, item, onSelect, isPrimary }) {
   const isForeign = item.foreignCurrency && item.balanceForeign != null
   return (
     <li className="list-none">
@@ -45,7 +45,12 @@ export default function PaymentCardListRow({ formatBalance, isUnlocked, item, on
           </p>
           <p className="mt-0.5 truncate text-xs text-[#8fa3ad]">{item.detailLine}</p>
         </div>
-        <span className="material-symbols-outlined shrink-0 text-2xl text-[#5c6b73]">chevron_right</span>
+        <div className="flex shrink-0 items-center gap-1">
+          {isPrimary ? (
+            <span className="material-symbols-outlined text-xl text-[#4cd6fb]" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+          ) : null}
+          <span className="material-symbols-outlined text-2xl text-[#5c6b73]">chevron_right</span>
+        </div>
       </button>
     </li>
   )
