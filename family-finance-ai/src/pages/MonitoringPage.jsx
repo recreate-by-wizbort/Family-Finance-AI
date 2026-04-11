@@ -220,12 +220,10 @@ export default function MonitoringPage() {
               showPercent: true,
               showIcon: arcSweepDeg >= 14,
               showArc: arcSweepDeg >= 0.8,
-              leaderStartX: 0,
-              leaderStartY: 0,
             }
           })
 
-          const MIN_LABEL_GAP = 18
+          const MIN_LABEL_GAP = 22
           const rightGroup = rawMetrics.filter(m => m.labelX >= center)
           const leftGroup = rawMetrics.filter(m => m.labelX < center)
 
@@ -252,13 +250,6 @@ export default function MonitoringPage() {
 
           spreadLabels(rightGroup)
           spreadLabels(leftGroup)
-
-          const leaderRadius = MAIN_RING_RADIUS + MAIN_RING_STROKE_WIDTH / 2 + 3
-          rawMetrics.forEach(m => {
-            const anchor = pointOnCircle(center, center, leaderRadius, m.centerAngleDeg)
-            m.leaderStartX = anchor.x
-            m.leaderStartY = anchor.y
-          })
 
           return rawMetrics
         })()
@@ -472,20 +463,6 @@ export default function MonitoringPage() {
             ) : null,
           )}
 
-          {layerMetrics.map((segment) =>
-            segment.showPercent ? (
-              <line
-                key={`${layerKey}-leader-${segment.category}`}
-                x1={segment.leaderStartX}
-                y1={segment.leaderStartY}
-                x2={segment.labelX}
-                y2={segment.adjustedLabelY}
-                stroke={segment.color}
-                strokeWidth="0.75"
-                strokeOpacity="0.4"
-              />
-            ) : null,
-          )}
         </svg>
 
         <div
@@ -520,24 +497,35 @@ export default function MonitoringPage() {
           ) : null,
         )}
 
-        {layerMetrics.map((segment) =>
-          segment.showIcon ? (
-            <span
+        {[...layerMetrics]
+          .filter(s => s.showIcon)
+          .sort((a, b) => a.centerAngleDeg - b.centerAngleDeg)
+          .map((segment) => (
+            <div
               key={`${layerKey}-badge-${segment.category}`}
-              className="material-symbols-outlined absolute -translate-x-1/2 -translate-y-1/2"
+              className="absolute flex items-center justify-center rounded-full -translate-x-1/2 -translate-y-1/2"
               style={{
                 left: `${segment.iconX}px`,
                 top: `${segment.iconY}px`,
-                fontSize: `${segment.iconSize}px`,
-                lineHeight: 1,
-                color: 'rgba(255,255,255,0.95)',
-                textShadow: '0 0 10px rgba(124, 214, 255, 0.45)',
+                width: `${segment.iconSize + 10}px`,
+                height: `${segment.iconSize + 10}px`,
+                backgroundColor: segment.color,
+                boxShadow: `0 2px 8px ${segment.color}55`,
+                zIndex: Math.round(360 - segment.centerAngleDeg),
               }}
             >
-              {segment.icon}
-            </span>
-          ) : null,
-        )}
+              <span
+                className="material-symbols-outlined"
+                style={{
+                  fontSize: `${segment.iconSize - 4}px`,
+                  lineHeight: 1,
+                  color: 'rgba(255,255,255,0.95)',
+                }}
+              >
+                {segment.icon}
+              </span>
+            </div>
+          ))}
       </div>
     )
   }
