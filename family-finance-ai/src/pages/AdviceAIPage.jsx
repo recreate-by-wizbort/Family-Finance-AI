@@ -4,8 +4,13 @@ import { askAI } from '../api'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
 import SubpageCloseButton from '../components/SubpageCloseButton'
-import { ACCOUNTS, TRANSACTIONS } from '../mockData'
-import { matchFAQ, CLARIFICATION_MSG, TOO_SHORT_MSG, buildSystemPrompt } from '../mockDataAI'
+import { ACCOUNTS, TRANSACTIONS, NON_EXPENSE_KINDS } from '../mockData'
+
+const NON_INCOME_KINDS_SET = new Set([
+  'transfer_internal', 'transfer_family', 'deposit_topup',
+  'goal_topup', 'transfer_p2p', 'transfer_external_card',
+])
+import { matchFAQ, detectSpecialInput, CLARIFICATION_MSG, TOO_SHORT_MSG, buildSystemPrompt } from '../mockDataAI'
 import { generateDynamicResponse, USER_PROFILE } from '../analysisEngine'
 import { isSessionUnlocked } from '../utils/sessionLock'
 
@@ -117,19 +122,43 @@ function sanitizeAssistantResponse(rawText) {
     .replace(/```[\s\S]*?```/g, '')
     .trim()
 
-  const lines = text.split('\n').map((line) => line.trim())
-  const thoughtLinePattern = /^(we need|let'?s|analysis|reasoning|user says|so we need|i should|thinking|draft)/i
-  const thoughtLines = lines.filter((line) => thoughtLinePattern.test(line)).length
-  if (thoughtLines > 0) {
-    const quoted = text.match(/[«"]([\s\S]*?)[»"]/)
+  const thinkingRu = /^(хорошо,?\s|ладно,?\s|так,?\s|итак,?\s|давай(те)?,?\s|нужно\s|мне нужно|пользователь\s(спраш|хочет|просит|пишет|говорит|задаёт|задает)|это\s(явно\s)?не\sфинансов|согласно\sправил|проверя[юе]|форматиру[ею]|можно\s(уложить|предложить|ответить|убедить)|также\sважно|сначала\sнужно|ответ\sдолжен|вопрос\s(не\sпо\sтеме|выходит|касается)|анализиру[юе]|рассмотр[ие]м|давайте\sразбер)/i
+  const thinkingEn = /^(we need|let'?s|analysis|reasoning|user says|so we need|i should|thinking|draft|okay so|the user)/i
+
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  const thoughtCount = lines.filter((l) => thinkingRu.test(l) || thinkingEn.test(l)).length
+
+  if (thoughtCount >= 2 || (thoughtCount >= 1 && lines.length > 6)) {
+    const quoted = text.match(/["«]([\s\S]{15,}?)["»]/)
     if (quoted?.[1]?.trim()) {
       text = quoted[1].trim()
     } else {
-      text = lines.filter((line) => line && !thoughtLinePattern.test(line)).join('\n').trim()
+      const clean = lines.filter((l) => !thinkingRu.test(l) && !thinkingEn.test(l))
+      text = clean.join('\n').trim()
     }
   }
 
-  return text || 'Не удалось сформировать итоговый ответ. Попробуйте уточнить вопрос.'
+  text = text.replace(/\[\s*КНОПКА:\s*/g, '[КНОПКА: ')
+
+  return text || 'Не удалось сформировать ответ. Попробуйте переформулировать вопрос.'
+}
+
+const FINANCE_KEYWORDS = [
+  'расход','доход','трат','денег','деньг','денеж','бюджет','зарплат','накоп','сэконом','эконом',
+  'вклад','кредит','займ','долг','баланс','счёт','счет','карт','перевод','платёж','платеж',
+  'цел','машин','отпуск','подушк','жильё','жилье','квартир',
+  'категор','подпис','коммунал','транспорт','такси','кафе','ресторан','магазин','маркетплейс',
+  'покуп','продукт','еда','одежд','здоров','развлеч','образован',
+  'прогноз','оптимиз','анализ','сравн','период','месяц','недел','год',
+  'сколько','хватит','почему выросл','куда уходят','где сэконом','как накоп','как быстрее',
+  'семь','ребён','ребенок','жена','муж','сын','дочь',
+  'процент','кэшбэк','инвест','сбереж','резерв',
+  'млн','тыс','сум','uzs',
+]
+
+function looksFinancial(input) {
+  const n = input.toLowerCase().replace(/ё/g, 'е')
+  return FINANCE_KEYWORDS.some((kw) => n.includes(kw))
 }
 
 function buildChatHistoryContext(messages) {
@@ -146,24 +175,147 @@ function buildCategoryEventsContext(events) {
     .join('\n')
 }
 
-function buildBudgetContext(range) {
-  const totalBalance = ACCOUNTS.reduce((s, a) => s + Number(a.balanceUzs || 0), 0)
+const CATEGORY_LABELS_BRIEF = {
+  groceries: 'Продукты', restaurants: 'Кафе и рестораны', transport: 'Транспорт',
+  clothes: 'Одежда', entertainment: 'Развлечения', shopping: 'Маркетплейсы',
+  health: 'Здоровье', car: 'Авто', education: 'Образование',
+  utilities: 'Коммунальные', subscriptions: 'Подписки', microloan: 'Микрозайм', other: 'Другое',
+  internal: 'Внутренние переводы', family: 'Семейные переводы', transfer: 'Переводы',
+  currency_purchase: 'Покупка валюты', deposit_account_fill: 'Пополнение вклада',
+  savings: 'Накопления', goal_topup: 'Пополнение цели', deposit_topup: 'Пополнение вклада',
+  investment_contribution: 'Инвестиции', transfer_p2p: 'Перевод P2P',
+  transfer_external_card: 'Перевод на карту',
+}
+
+function isRealExpense(tx) {
+  return tx.direction === 'out' && !NON_EXPENSE_KINDS.includes(tx.kind)
+}
+
+function isRealIncome(tx) {
+  return tx.direction === 'in' && !NON_INCOME_KINDS_SET.has(tx.kind)
+}
+
+function buildBudgetContext(range, currentScope) {
+  const uid = currentScope === 'family' ? null : USER_PROFILE.userId
+  const totalBalance = ACCOUNTS
+    .filter((a) => !uid || a.userId === uid)
+    .reduce((s, a) => s + Number(a.balanceUzs || 0), 0)
   const filtered = TRANSACTIONS.filter((tx) => {
     const t = new Date(tx.timestamp).getTime()
-    return t >= range.start.getTime() && t <= range.end.getTime()
+    if (t < range.start.getTime() || t > range.end.getTime()) return false
+    if (uid && tx.userId !== uid) return false
+    return true
   })
-  const income = filtered.filter((t) => t.direction === 'in').reduce((s, t) => s + Number(t.amountUzs || 0), 0)
-  const expenses = filtered.filter((t) => t.direction === 'out').reduce((s, t) => s + Number(t.amountUzs || 0), 0)
-  const cats = filtered
-    .filter((t) => t.direction === 'out')
+  const income = filtered.filter(isRealIncome).reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+  const realExpensesList = filtered.filter(isRealExpense)
+  const expensesTotal = realExpensesList.reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+  const cats = realExpensesList
     .reduce((m, t) => { const k = t.category || 'other'; m.set(k, (m.get(k) || 0) + Number(t.amountUzs || 0)); return m }, new Map())
-  const top = [...cats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, a]) => `${c}: ${formatMoney(a)} сум`)
+  const top = [...cats.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 7)
+    .map(([c, a]) => `${CATEGORY_LABELS_BRIEF[c] || c}: ${formatMoney(a)} сум`)
   return [
     `Баланс: ${formatMoney(totalBalance)} сум`,
     `Доходы за период: ${formatMoney(income)} сум`,
-    `Расходы за период: ${formatMoney(expenses)} сум`,
-    `Топ категорий: ${top.join(', ')}`,
-    `Транзакций в периоде: ${filtered.length}`,
+    `Реальные расходы за период (без переводов в семье, без переводов между счетами): ${formatMoney(expensesTotal)} сум`,
+    `Топ категорий расходов: ${top.join(', ')}`,
+    `Транзакций-расходов в периоде: ${realExpensesList.length}`,
+  ].join('\n')
+}
+
+const MONTH_LABELS_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+
+function buildYearlyContext(currentScope) {
+  const uid = currentScope === 'family' ? null : USER_PROFILE.userId
+  const now = new Date()
+  const months = []
+  for (let i = 11; i >= 0; i--) {
+    const mDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const start = new Date(mDate.getFullYear(), mDate.getMonth(), 1)
+    const end = new Date(mDate.getFullYear(), mDate.getMonth() + 1, 0, 23, 59, 59, 999)
+    const txs = TRANSACTIONS.filter((tx) => {
+      const t = new Date(tx.timestamp).getTime()
+      if (t < start.getTime() || t > end.getTime()) return false
+      if (uid && tx.userId !== uid) return false
+      return true
+    })
+    const income = txs.filter(isRealIncome).reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+    const expenses = txs.filter(isRealExpense).reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+    const cats = txs.filter(isRealExpense)
+      .reduce((m, t) => { const k = t.category || 'other'; m.set(k, (m.get(k) || 0) + Number(t.amountUzs || 0)); return m }, new Map())
+    const topCats = [...cats.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([c, a]) => `${CATEGORY_LABELS_BRIEF[c] || c}: ${formatMoney(a)}`)
+      .join(', ')
+    const label = `${MONTH_LABELS_RU[mDate.getMonth()]} ${mDate.getFullYear()}`
+    months.push(`${label}: доход ${formatMoney(income)}, расходы ${formatMoney(expenses)}${topCats ? ` (${topCats})` : ''}`)
+  }
+  return `Помесячная динамика за 12 мес. (реальные расходы, без переводов):\n${months.join('\n')}`
+}
+
+function inferGoalHorizonMonths(messages) {
+  const recentUserTexts = [...messages]
+    .reverse()
+    .filter((m) => m?.role === 'user')
+    .map((m) => String(m.text || ''))
+
+  for (const text of recentUserTexts) {
+    if (!/машин/i.test(text)) continue
+    const match = text.match(/(\d+)\s*(мес|месяц|месяца|месяцев)/i)
+    if (match) {
+      const n = Number(match[1])
+      if (Number.isFinite(n) && n > 0 && n <= 60) return n
+    }
+  }
+  return 3
+}
+
+function periodToMonthlyAmount(amount, periodType) {
+  if (!Number.isFinite(amount)) return 0
+  if (periodType === 'week') return amount * 4.33
+  if (periodType === 'year') return amount / 12
+  return amount
+}
+
+function buildCarPlanText({ range, currentScope, periodType, messages }) {
+  const uid = currentScope === 'family' ? null : USER_PROFILE.userId
+  const txs = TRANSACTIONS.filter((tx) => {
+    const t = new Date(tx.timestamp).getTime()
+    if (t < range.start.getTime() || t > range.end.getTime()) return false
+    if (uid && tx.userId !== uid) return false
+    return true
+  })
+
+  const income = txs.filter(isRealIncome).reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+  const expenseTxs = txs.filter(isRealExpense)
+  const expenses = expenseTxs.reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+  const free = Math.max(0, income - expenses)
+
+  const optimizeCats = new Set(['restaurants', 'shopping', 'entertainment', 'transport', 'clothes'])
+  const optimizeBase = expenseTxs
+    .filter((tx) => optimizeCats.has(tx.category))
+    .reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+
+  const monthlyFree = Math.max(0, periodToMonthlyAmount(free, periodType))
+  const monthlyAuto = Math.round(monthlyFree * 0.6)
+  const monthlyExtra = Math.round(periodToMonthlyAmount(optimizeBase * 0.25, periodType))
+  const monthlyTotal = monthlyAuto + monthlyExtra
+  const horizonMonths = inferGoalHorizonMonths(messages)
+  const targetByHorizon = monthlyTotal * horizonMonths
+
+  return [
+    `Реальный план накопления на машину на ${horizonMonths} мес.:`,
+    '',
+    `1) База по вашим данным: доход ${formatMoney(income)} сум, расходы ${formatMoney(expenses)} сум, свободно ${formatMoney(free)} сум за текущий период.`,
+    `2) Ежемесячный взнос в цель: ${formatMoney(monthlyAuto)} сум (60% свободного остатка).`,
+    `3) Доп. ускорение: сократить кафе/маркетплейсы/развлечения/транспорт на 25% и добавить ещё ~${formatMoney(monthlyExtra)} сум в месяц.`,
+    '',
+    `Итого можно направлять на машину около ${formatMoney(monthlyTotal)} сум/мес.`,
+    `За ${horizonMonths} мес. это даст ~${formatMoney(targetByHorizon)} сум.`,
+    '',
+    '[КНОПКА: Открыть цель «Машина» и включить автопополнение]',
   ].join('\n')
 }
 
@@ -734,9 +886,12 @@ export default function AdviceAIPage() {
 
   // ── Free-form question handler ───────────────────────────────────────────────
 
-  const budgetContext = useMemo(() => (periodRange ? buildBudgetContext(periodRange) : ''), [periodRange])
+  const budgetContext = useMemo(() => (periodRange ? buildBudgetContext(periodRange, scope) : ''), [periodRange, scope])
+  const yearlyContext = useMemo(() => buildYearlyContext(scope), [scope])
 
-  const runQuestion = async (questionText) => {
+  const runQuestion = async (questionText, options = {}) => {
+    const source = options?.source || 'input'
+    const isActionTrigger = source === 'action'
     const q = questionText.trim()
     if (!q || isLoading) return
     setInputValue('')
@@ -748,23 +903,50 @@ export default function AdviceAIPage() {
     const historyContext = buildChatHistoryContext(historyForAI)
     const categoriesContext = buildCategoryEventsContext(categoryEvents)
 
+    const specialMatch = detectSpecialInput(q)
+    if (specialMatch) {
+      await sleep(responseDelayMs)
+      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: specialMatch.r }])
+      return
+    }
+
     if (q.length < 5) {
       await sleep(responseDelayMs)
       setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: TOO_SHORT_MSG }])
       return
     }
 
-    const faqMatch = matchFAQ(q)
-    if (faqMatch) {
+    if (isActionTrigger && /план.*машин/i.test(q) && periodRange) {
       await sleep(responseDelayMs)
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: faqMatch.r }])
+      const planText = buildCarPlanText({
+        range: periodRange,
+        currentScope: scope,
+        periodType,
+        messages: historyForAI,
+      })
+      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: planText }])
       setAskedClarification(false)
       return
     }
 
-    if (q.length < 100 && !askedClarification) {
+    if (!isActionTrigger) {
+      const faqMatch = matchFAQ(q)
+      if (faqMatch) {
+        await sleep(responseDelayMs)
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: faqMatch.r }])
+        setAskedClarification(false)
+        return
+      }
+    }
+
+    if (!looksFinancial(q) && !askedClarification) {
       await sleep(responseDelayMs)
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: CLARIFICATION_MSG }])
+      const topCats = activeTree.map((c) => c.label).join(', ')
+      setMessages((prev) => [...prev, {
+        id: `a-${Date.now()}`,
+        role: 'assistant',
+        text: `Не уверен, что понял ваш вопрос. Возможно, вы имели в виду что-то из этих тем?\n\n${topCats}\n\nВыберите категорию ниже или задайте вопрос ещё раз — и я передам его AI-помощнику.`,
+      }])
       setAskedClarification(true)
       return
     }
@@ -772,30 +954,29 @@ export default function AdviceAIPage() {
     setAskedClarification(false)
     setIsLoading(true)
 
+    await sleep(50)
+
     try {
       const history = historyForAI.map((m) => ({ role: m.role, content: m.text }))
       const systemPrompt = buildSystemPrompt(scope, periodLabel, USER_PROFILE.name)
-      const contextMsg = `${systemPrompt}
 
-Финансовые данные:
-${budgetContext}
+      const enrichedBudget = [
+        budgetContext,
+        '',
+        `История выбора категорий: ${categoriesContext || 'нет'}`,
+      ].join('\n')
 
-Полная история чата:
-${historyContext}
-
-История выбора категорий и причин смены:
-${categoriesContext}
-
-Текущий вопрос пользователя:
-${q}`
-
-      await sleep(responseDelayMs)
       let streamed = ''
-      for await (const token of askAI(contextMsg, budgetContext, history)) {
+      for await (const token of askAI(systemPrompt, q, enrichedBudget, yearlyContext, history)) {
         streamed += token
       }
       const safeFinal = sanitizeAssistantResponse(streamed)
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: safeFinal }])
+
+      if (!safeFinal || safeFinal.trim() === q.trim()) {
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: 'Этот вопрос выходит за рамки моей специализации. Я — финансовый помощник и могу помочь с анализом расходов, доходов, целей и прогнозов. Попробуйте спросить что-то связанное с вашими финансами.' }])
+      } else {
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: safeFinal }])
+      }
     } catch (err) {
       setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: `Ошибка: ${err?.message || 'попробуйте позже'}` }])
     } finally {
@@ -825,8 +1006,9 @@ ${q}`
     <div className="min-h-screen overflow-x-hidden bg-[#041329] pb-32 text-[#d6e3ff]" style={{ minHeight: '100dvh' }}>
       <AppTopBar />
 
-      {/* Fixed scope toggle */}
-      <div className="fixed left-0 right-0 top-[64px] z-40 flex justify-center bg-[#041329]/90 px-6 py-3 backdrop-blur-lg">
+      {/* Fixed scope toggle + close */}
+      <div className="fixed left-0 right-0 top-[64px] z-40 flex items-center justify-between bg-[#041329]/90 px-4 py-3 backdrop-blur-lg sm:px-6">
+        <div className="w-10 shrink-0 sm:w-[3.25rem]" />
         <div className="relative flex w-full max-w-[260px] rounded-full bg-[#112036] p-1 shadow-inner shadow-black/30">
           <button type="button" className={`${pillBase} ${scope === 'personal' ? pillActive : pillInactive}`} onClick={() => changeScope('personal')}>
             Личные
@@ -835,17 +1017,13 @@ ${q}`
             Семейные
           </button>
         </div>
+        <SubpageCloseButton ariaLabel="Закрыть" onClose={returnToMonitoring} />
       </div>
 
       <main className="mx-auto mt-[136px] max-w-5xl px-6 pb-32">
         {/* Header */}
         <section className="mb-6">
-          <div className="mb-3 flex items-start justify-between gap-3 font-headline text-3xl font-extrabold leading-tight tracking-tight text-[#d6e3ff]">
-            <h1 className="min-w-0 flex-1">Ваш персональный помощник AI</h1>
-            <div className="mt-1">
-              <SubpageCloseButton ariaLabel="Закрыть" onClose={returnToMonitoring} />
-            </div>
-          </div>
+          <h1 className="mb-3 font-headline text-3xl font-extrabold leading-tight tracking-tight text-[#d6e3ff]">Ваш персональный помощник AI</h1>
           <p className="text-sm text-[#bcc9ce]">Анализ личного/семейного бюджета в реальном времени и точечные советы.</p>
         </section>
 
@@ -1015,7 +1193,7 @@ ${q}`
                         <button
                           key={`${msg.id}-${label}`}
                           type="button"
-                          onClick={() => runQuestion(label)}
+                          onClick={() => runQuestion(label, { source: 'action' })}
                           disabled={isLoading}
                           className="rounded-full border border-[#4cd6fb]/45 bg-[#112036] px-3 py-1.5 text-xs font-semibold text-[#58d6f1] transition hover:border-[#4cd6fb] hover:bg-[#1b2a42] disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -1029,6 +1207,22 @@ ${q}`
                 })()}
               </div>
             ))}
+
+            {isLoading ? (
+              <div className="flex items-start gap-3 justify-start">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#112036]">
+                  <span className="material-symbols-outlined text-[#4cd6fb]" style={{ fontVariationSettings: '"FILL" 1' }}>smart_toy</span>
+                </div>
+                <div className="max-w-[min(100%,44rem)] whitespace-pre-line rounded-3xl rounded-tl-none border-l-2 border-[#4cd6fb]/40 bg-[#0d1c32] p-4 leading-relaxed text-[#d6e3ff]">
+                  <div className="flex items-center gap-2 text-sm text-[#bcc9ce]">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-[#4cd6fb]" />
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-[#4cd6fb] [animation-delay:150ms]" />
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-[#4cd6fb] [animation-delay:300ms]" />
+                    <span className="ml-1">AI печатает...</span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {/* Category selector */}
             {typingDone && !isLoading ? (

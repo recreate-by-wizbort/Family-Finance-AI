@@ -5,7 +5,7 @@
 
 ## Цель
 Подключить бесплатный AI через OpenRouter API.
-Модель: `google/gemma-3-27b-it:free` (бесплатно, без ключа с лимитами).
+Модель: `nvidia/nemotron-3-super-120b-a12b:free`.
 
 ---
 
@@ -41,12 +41,12 @@ VITE_OPENROUTER_API_KEY=sk-or-ТВОЙ_КЛЮЧ_ЗДЕСЬ
 ## Шаг 3 — Полное содержимое `src/api.js`
 
 ```javascript
-// api.js — интеграция с OpenRouter (бесплатная модель Gemma)
+// api.js — интеграция с OpenRouter (бесплатная модель Nemotron)
 
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 // Для CRA: process.env.REACT_APP_OPENROUTER_API_KEY
 
-const MODEL = "google/gemma-4-26b-a4b-it:free";
+const MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // Системный промпт — задаёт роль и ограничения AI-помощника
