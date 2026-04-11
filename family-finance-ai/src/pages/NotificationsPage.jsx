@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import UzsAmount from '../components/UzsAmount'
 import useExchangeRates from '../hooks/useExchangeRates'
@@ -94,6 +94,11 @@ export default function NotificationsPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const rates = useExchangeRates()
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
+
 
   const returnToPath = useMemo(() => {
     const params = new URLSearchParams(location.search)

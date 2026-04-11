@@ -72,6 +72,13 @@ export default function OpenDepositModal({
     return () => window.removeEventListener('keydown', h)
   }, [isOpen, requestClose])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [isOpen])
+
   const selectedCard = useMemo(
     () => allUserCards.find((c) => c.id === selectedCardId) ?? allUserCards[0],
     [allUserCards, selectedCardId],

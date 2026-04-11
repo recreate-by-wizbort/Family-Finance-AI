@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { formatSelectBalanceClosed, formatSelectBalanceFull } from '../utils/balanceDisplay'
 
 export default function CardSourceSelect({
@@ -13,6 +14,7 @@ export default function CardSourceSelect({
   const [menuPos, setMenuPos] = useState(null)
   const rootRef = useRef(null)
   const btnRef = useRef(null)
+  const menuRef = useRef(null)
 
   const selected = useMemo(
     () => cards.find((c) => c.id === value) ?? cards[0],
@@ -25,13 +27,18 @@ export default function CardSourceSelect({
       return
     }
     const update = () => {
+      if (!btnRef.current) return
       const r = btnRef.current.getBoundingClientRect()
       setMenuPos({ top: r.bottom + 4, left: r.left, width: r.width })
     }
     update()
+    const raf = requestAnimationFrame(() => {
+      update()
+    })
     window.addEventListener('scroll', update, true)
     window.addEventListener('resize', update)
     return () => {
+      cancelAnimationFrame(raf)
       window.removeEventListener('scroll', update, true)
       window.removeEventListener('resize', update)
     }
@@ -40,7 +47,10 @@ export default function CardSourceSelect({
   useEffect(() => {
     if (!open) return
     const onDoc = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false)
+      const t = e.target
+      if (rootRef.current?.contains(t)) return
+      if (menuRef.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -51,6 +61,46 @@ export default function CardSourceSelect({
   const closedLine = selected
     ? `${selected.sheetTitle} · •••• ${selected.last4} · ${formatSelectBalanceClosed(selected)}`
     : ''
+
+  const menuEl =
+    open && menuPos && typeof document !== 'undefined'
+      ? createPortal(
+          <ul
+            ref={menuRef}
+            className="fixed z-[9999] max-h-[min(52vh,320px)] overflow-y-auto rounded-xl border border-[#1c2a41] bg-[#0d1c32] py-1 shadow-2xl"
+            role="listbox"
+            style={{
+              top: menuPos.top,
+              left: menuPos.left,
+              width: menuPos.width,
+            }}
+          >
+            {cards.map((c) => {
+              const active = c.id === (value || selected?.id)
+              const fullLine = `${c.sheetTitle} · •••• ${c.last4} · ${formatSelectBalanceFull(c)}`
+              return (
+                <li key={c.id} role="option" aria-selected={active}>
+                  <button
+                    type="button"
+                    className={`flex w-full px-4 py-3 text-left text-sm transition-colors ${
+                      active
+                        ? 'bg-[#4cd6fb]/12 text-[#d6e3ff]'
+                        : 'text-[#d6e3ff] hover:bg-[#112036]'
+                    }`}
+                    onClick={() => {
+                      onChange(c.id)
+                      setOpen(false)
+                    }}
+                  >
+                    <span className="line-clamp-2 break-words font-medium">{fullLine}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>,
+          document.body,
+        )
+      : null
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
@@ -74,41 +124,7 @@ export default function CardSourceSelect({
           </span>
         </span>
       </button>
-
-      {open && menuPos ? (
-        <ul
-          className="fixed z-[140] max-h-[min(52vh,320px)] overflow-y-auto rounded-xl border border-[#1c2a41] bg-[#0d1c32] py-1 shadow-2xl"
-          role="listbox"
-          style={{
-            top: menuPos.top,
-            left: menuPos.left,
-            width: menuPos.width,
-          }}
-        >
-          {cards.map((c) => {
-            const active = c.id === (value || selected?.id)
-            const fullLine = `${c.sheetTitle} · •••• ${c.last4} · ${formatSelectBalanceFull(c)}`
-            return (
-              <li key={c.id} role="option" aria-selected={active}>
-                <button
-                  type="button"
-                  className={`flex w-full px-4 py-3 text-left text-sm transition-colors ${
-                    active
-                      ? 'bg-[#4cd6fb]/12 text-[#d6e3ff]'
-                      : 'text-[#d6e3ff] hover:bg-[#112036]'
-                  }`}
-                  onClick={() => {
-                    onChange(c.id)
-                    setOpen(false)
-                  }}
-                >
-                  <span className="line-clamp-2 break-words font-medium">{fullLine}</span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      ) : null}
+      {menuEl}
     </div>
   )
 }

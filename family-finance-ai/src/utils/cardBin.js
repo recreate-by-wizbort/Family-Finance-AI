@@ -210,6 +210,37 @@ export function getProcessingSystemFromFirstFour(digits) {
   return null
 }
 
+/**
+ * Проверка номера карты как при привязке (16 цифр, система, банк по BIN).
+ * При неполном номере возвращает ok: false без текста ошибки.
+ */
+export function validateLinkedCardPanForTransfer(panDigits) {
+  const d = String(panDigits).replace(/\D/g, '')
+  if (d.length !== 16) {
+    return { ok: false, message: null, system: null, bank: null }
+  }
+  const firstFour = d.slice(0, 4)
+  const system = getProcessingSystemFromFirstFour(firstFour)
+  if (!system) {
+    return {
+      ok: false,
+      message: 'Платёжная система не распознана по первым 4 цифрам. Карту добавить нельзя.',
+      system: null,
+      bank: null,
+    }
+  }
+  const bankResolved = getBankNameFromBin(d)
+  if (!bankResolved) {
+    return {
+      ok: false,
+      message: 'Банк не определён по номеру карты. Проверьте правильность введённого номера.',
+      system: null,
+      bank: null,
+    }
+  }
+  return { ok: true, message: null, system, bank: bankResolved }
+}
+
 /** Нужен ли CVV/CVC при привязке карты (HUMO и UZCARD — без CVV). */
 export function processingSystemRequiresCvv(system) {
   if (!system) return false

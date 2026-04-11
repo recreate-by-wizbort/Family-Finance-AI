@@ -9,6 +9,14 @@ export function formatUzsFullRu(amount) {
     .replace(',', '.')
 }
 
+/** Полный баланс валютного счёта для списков карт (как в макете). */
+export function formatForeignBalanceFull(amount, ccy) {
+  const n = Number(amount)
+  if (!Number.isFinite(n)) return `0,00 ${ccy}`
+  const s = n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(',', '.')
+  return `${s} ${ccy}`
+}
+
 /** Короткий баланс валютного счёта (как UZS: млн / тыс). */
 export function formatForeignBalanceShort(amount, ccy) {
   const v = Math.abs(Number(amount))

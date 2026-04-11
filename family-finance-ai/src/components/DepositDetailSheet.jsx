@@ -87,6 +87,13 @@ export default function DepositDetailSheet({
     return () => window.removeEventListener('keydown', h)
   }, [deposit, mode, requestClose])
 
+  useEffect(() => {
+    if (!deposit) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [deposit])
+
   const selectedCard = useMemo(
     () => allUserCards.find((c) => c.id === selectedCardId) ?? allUserCards[0],
     [allUserCards, selectedCardId],

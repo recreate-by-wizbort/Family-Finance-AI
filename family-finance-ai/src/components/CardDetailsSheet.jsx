@@ -48,6 +48,10 @@ export default function CardDetailsSheet({
   /** Доп. движения по картам (вклады и т.п.), id карты → массив операций */
   linkedMovementsByCardId = {},
   onSelectCard,
+  /** Колбэки для пополнения/снятия */
+  onTopUp,
+  onWithdraw,
+  deposits = [],
 }) {
   const [tab, setTab] = useState('all')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -369,6 +373,32 @@ export default function CardDetailsSheet({
               </div>
             </dl>
           </section>
+
+          {/* Top-up / Withdraw buttons */}
+          {card.kind !== 'account' ? (
+            <div className="mb-4 flex shrink-0 gap-3">
+              {onTopUp ? (
+                <button
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#4cd6fb]/40 bg-[#003642]/60 py-2.5 text-sm font-bold text-[#4cd6fb] transition-colors hover:bg-[#003642]"
+                  onClick={() => onTopUp(card)}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                  Пополнить
+                </button>
+              ) : null}
+              {onWithdraw ? (
+                <button
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#1c2a41] bg-[#112036] py-2.5 text-sm font-bold text-[#d6e3ff] transition-colors hover:border-[#4cd6fb]/40 hover:bg-[#1c2a41]"
+                  onClick={() => onWithdraw(card)}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-[18px]">send</span>
+                  Снять
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Rename dialog */}
           {renaming ? (

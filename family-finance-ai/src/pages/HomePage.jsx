@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
 import AddLinkedCardModal from '../components/AddLinkedCardModal'
@@ -7,6 +8,15 @@ import OpenDepositModal from '../components/OpenDepositModal'
 import DepositDetailSheet from '../components/DepositDetailSheet'
 import DepositsOverviewSheet from '../components/DepositsOverviewSheet'
 import SpecialOffersAllSheet from '../components/SpecialOffersAllSheet'
+import OpenAccountModal from '../components/OpenAccountModal'
+import AccountsOverviewSheet from '../components/AccountsOverviewSheet'
+import AccountDetailSheet from '../components/AccountDetailSheet'
+import ComingSoonSheet from '../components/ComingSoonSheet'
+import CurrencyRatesSheet from '../components/CurrencyRatesSheet'
+import PromotionsSheet from '../components/PromotionsSheet'
+import OfferDetailSheet from '../components/OfferDetailSheet'
+import CardTopUpSheet from '../components/CardTopUpSheet'
+import CardTransferSheet from '../components/CardTransferSheet'
 import PaymentCardListRow from '../components/PaymentCardListRow'
 import UzsAmount from '../components/UzsAmount'
 import useExchangeRates from '../hooks/useExchangeRates'
@@ -27,12 +37,19 @@ import {
   createBuiltInDemoDeposits,
 } from '../utils/deposits'
 import {
+  loadUserAccounts,
+  saveUserAccounts,
+  topUpAccount,
+  withdrawFromAccount,
+} from '../utils/accounts'
+import {
   loadDepositCardMovements,
   appendDepositCardMovement,
   buildDepositOutMovement,
   buildDepositInMovement,
 } from '../utils/depositCardMovements'
 import { SPECIAL_OFFERS } from '../data/specialOffers'
+import { loadCardBalanceDeltas, saveCardBalanceDeltas } from '../utils/cardBalanceDeltas'
 
 const HOME_OWNER_ID = 'user_1'
 const PRIMARY_ACCOUNT_ID = 'acc_tbc_main'
@@ -53,6 +70,7 @@ function depositCountRu(n) {
 }
 
 export default function HomePage() {
+  const navigate = useNavigate()
   const isUnlocked = isSessionUnlocked()
   const rates = useExchangeRates()
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -66,10 +84,24 @@ export default function HomePage() {
   const [openDepositOpen, setOpenDepositOpen] = useState(false)
   const [depositsOverviewOpen, setDepositsOverviewOpen] = useState(false)
   const [selectedDeposit, setSelectedDeposit] = useState(null)
-  const [cardBalanceDeltas, setCardBalanceDeltas] = useState({})
+  const [cardBalanceDeltas, setCardBalanceDeltas] = useState(() => loadCardBalanceDeltas())
   const [linkedMovementsByCardId, setLinkedMovementsByCardId] = useState(loadDepositCardMovements)
   const [specialOfferIndex, setSpecialOfferIndex] = useState(0)
   const [specialOffersAllOpen, setSpecialOffersAllOpen] = useState(false)
+  const [comingSoonOpen, setComingSoonOpen] = useState(false)
+  const [comingSoonTitle, setComingSoonTitle] = useState('')
+  const [currencyRatesOpen, setCurrencyRatesOpen] = useState(false)
+  const [promotionsOpen, setPromotionsOpen] = useState(false)
+  const [selectedOffer, setSelectedOffer] = useState(null)
+  const [cardTopUpTarget, setCardTopUpTarget] = useState(null)
+  const [cardTransferOpen, setCardTransferOpen] = useState(false)
+  const [cardTransferPreselected, setCardTransferPreselected] = useState(null)
+  const [userAccounts, setUserAccounts] = useState(loadUserAccounts)
+  const [openAccountOpen, setOpenAccountOpen] = useState(false)
+  const [accountsOverviewOpen, setAccountsOverviewOpen] = useState(false)
+  const [selectedAccount, setSelectedAccount] = useState(null)
+  const offersTouchRef = useRef({ startX: 0, startY: 0 })
+  const offersTimerRef = useRef(null)
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search)
@@ -90,14 +122,68 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
+    saveCardBalanceDeltas(cardBalanceDeltas)
+  }, [cardBalanceDeltas])
+
+  useEffect(() => {
+    const sync = () => setCardBalanceDeltas(loadCardBalanceDeltas())
+    const onVis = () => {
+      if (document.visibilityState === 'visible') sync()
+    }
+    window.addEventListener('focus', sync)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('focus', sync)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
+
+  const resetOffersTimer = useCallback(() => {
+    if (offersTimerRef.current) clearInterval(offersTimerRef.current)
     if (SPECIAL_OFFERS.length <= 1) return
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
     if (mq.matches) return
-    const id = window.setInterval(() => {
+    offersTimerRef.current = setInterval(() => {
       setSpecialOfferIndex((i) => (i + 1) % SPECIAL_OFFERS.length)
     }, 4000)
-    return () => window.clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    resetOffersTimer()
+    return () => { if (offersTimerRef.current) clearInterval(offersTimerRef.current) }
+  }, [resetOffersTimer])
+
+  const handleOffersTouchStart = useCallback((e) => {
+    offersTouchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY }
+  }, [])
+
+  const handleOffersTouchEnd = useCallback((e) => {
+    const dx = e.changedTouches[0].clientX - offersTouchRef.current.startX
+    const dy = e.changedTouches[0].clientY - offersTouchRef.current.startY
+    if (Math.abs(dx) < 40 || Math.abs(dy) > Math.abs(dx)) return
+    if (dx < 0) {
+      setSpecialOfferIndex((i) => (i + 1) % SPECIAL_OFFERS.length)
+    } else {
+      setSpecialOfferIndex((i) => (i - 1 + SPECIAL_OFFERS.length) % SPECIAL_OFFERS.length)
+    }
+    resetOffersTimer()
+  }, [resetOffersTimer])
+
+  const openComingSoon = useCallback((title) => {
+    setComingSoonTitle(title)
+    setComingSoonOpen(true)
+  }, [])
+
+  const handleCardTopUp = useCallback((card) => {
+    setCardTopUpTarget(card)
+  }, [])
+
+  const handleCardWithdraw = useCallback((card) => {
+    setSelectedCard(null)
+    navigate('/transfers', {
+      state: { unlocked: true, openTransfer: true, preselectedCardId: card.id, transferTab: 'card' },
+    })
+  }, [navigate])
 
   const handleAddLinkedCard = useCallback((card) => {
     setUserLinkedCards((prev) => [...prev, card])
@@ -233,6 +319,59 @@ export default function HomePage() {
     },
     [applyCardDelta],
   )
+
+  const handleOpenAccountsEntry = useCallback(() => {
+    if (userAccounts.length === 0) {
+      setOpenAccountOpen(true)
+    } else {
+      setAccountsOverviewOpen(true)
+    }
+  }, [userAccounts.length])
+
+  const handleAccountCreated = useCallback((acc, card, amountInCardCurrency) => {
+    setUserAccounts((prev) => {
+      const next = [...prev, acc]
+      saveUserAccounts(next)
+      return next
+    })
+    applyCardDelta(card.id, -amountInCardCurrency)
+    const mov = buildDepositOutMovement(card, amountInCardCurrency, 'Открытие счёта')
+    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, mov))
+  }, [applyCardDelta])
+
+  const handleAccountTopUp = useCallback((account, amount, card, amountInCardCurrency) => {
+    setUserAccounts((prev) => {
+      const next = prev.map((a) => a.id === account.id ? topUpAccount(a, amount, card.id) : a)
+      saveUserAccounts(next)
+      return next
+    })
+    applyCardDelta(card.id, -amountInCardCurrency)
+    const mov = buildDepositOutMovement(card, amountInCardCurrency, 'Пополнение счёта')
+    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, mov))
+    setSelectedAccount((prev) => prev?.id === account.id ? topUpAccount(account, amount, card.id) : prev)
+  }, [applyCardDelta])
+
+  const handleAccountWithdraw = useCallback((account, amount, card, amountToCard) => {
+    setUserAccounts((prev) => {
+      const next = prev.map((a) => a.id === account.id ? withdrawFromAccount(a, amount, card.id) : a)
+      saveUserAccounts(next)
+      return next
+    })
+    applyCardDelta(card.id, amountToCard)
+    const mov = buildDepositInMovement(card, amountToCard, 'Снятие со счёта')
+    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, mov))
+    setSelectedAccount((prev) => prev?.id === account.id ? withdrawFromAccount(account, amount, card.id) : prev)
+  }, [applyCardDelta])
+
+  const handleCardTopUpComplete = useCallback((sourceId, sourceType, amount) => {
+    applyCardDelta(cardTopUpTarget.id, amount)
+    applyCardDelta(sourceId, -amount)
+    const movIn = buildDepositInMovement(cardTopUpTarget, amount, `Пополнение с ${sourceType === 'deposit' ? 'вклада' : 'карты'}`)
+    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, cardTopUpTarget.id, movIn))
+    const movOut = buildDepositOutMovement({ id: sourceId }, amount, `Перевод на карту ${cardTopUpTarget.sheetTitle}`)
+    setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, sourceId, movOut))
+    setCardTopUpTarget(null)
+  }, [cardTopUpTarget, applyCardDelta])
 
   const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems } =
     useMemo(() => {
@@ -408,21 +547,36 @@ export default function HomePage() {
     return items
   }, [accountItems, removedRowIds, renamedLabels, resolvedPrimaryId])
 
-  const allUserCards = useMemo(() => {
-    const applyDelta = (c) => {
-      const d = cardBalanceDeltas[c.id]
-      if (!d) return c
-      if (c.foreignCurrency) {
-        return { ...c, balanceForeign: (c.balanceForeign ?? 0) + d }
-      }
-      return { ...c, balanceUzs: (c.balanceUzs ?? 0) + d }
+  const applyCardBalanceDelta = useCallback((c) => {
+    if (!c) return c
+    const d = cardBalanceDeltas[c.id]
+    if (!d) return c
+    if (c.foreignCurrency) {
+      return { ...c, balanceForeign: (c.balanceForeign ?? 0) + d }
     }
-    return [
-      ...sortedPrimaryLinked.map(applyDelta),
-      ...sortedOtherLinked.map(applyDelta),
-      ...sortedAccountItems.map(applyDelta),
-    ]
-  }, [sortedPrimaryLinked, sortedOtherLinked, sortedAccountItems, cardBalanceDeltas])
+    return { ...c, balanceUzs: (c.balanceUzs ?? 0) + d }
+  }, [cardBalanceDeltas])
+
+  const allUserCards = useMemo(
+    () => [
+      ...sortedPrimaryLinked.map(applyCardBalanceDelta),
+      ...sortedOtherLinked.map(applyCardBalanceDelta),
+      ...sortedAccountItems.map(applyCardBalanceDelta),
+    ],
+    [sortedPrimaryLinked, sortedOtherLinked, sortedAccountItems, applyCardBalanceDelta],
+  )
+
+  const handleTransferComplete = useCallback(
+    (cardId, amountUzs, debitInCardCurrency, sourceCard) => {
+      const d = debitInCardCurrency ?? amountUzs
+      applyCardDelta(cardId, -d)
+      const card =
+        sourceCard ?? allUserCards.find((c) => c.id === cardId) ?? { id: cardId }
+      const mov = buildDepositOutMovement(card, d, 'Перевод')
+      setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, cardId, mov))
+    },
+    [applyCardDelta, allUserCards],
+  )
 
   const cardsOnlyTotalUzs = useMemo(() => {
     let sum = 0
@@ -466,26 +620,27 @@ export default function HomePage() {
                   Баланс карт
                 </p>
                 <h2 className="text-4xl font-extrabold tracking-tight text-[#003642] md:text-5xl">
-                  <UzsAmount
-                    as="span"
-                    compact
-                    compactFrom={1000}
-                    value={balanceValue}
-                  />
+                  <UzsAmount as="span" value={balanceValue} />
                 </h2>
               </div>
-              <div className="mt-12 flex items-center justify-between">
-                <div className="flex -space-x-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/20 backdrop-blur-md">
-                    <span className="material-symbols-outlined text-sm text-[#003642]">
-                      credit_card
-                    </span>
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/20 backdrop-blur-md">
-                    <span className="material-symbols-outlined text-sm text-[#003642]">
-                      account_balance_wallet
-                    </span>
-                  </div>
+              <div className="mt-8 flex items-center justify-between">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openComingSoon('Оплата по QR')}
+                    className="flex h-10 items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-3 backdrop-blur-md transition-all active:scale-95"
+                  >
+                    <span className="material-symbols-outlined text-sm text-[#003642]">qr_code_scanner</span>
+                    <span className="text-[11px] font-semibold text-[#003642]">QR</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openComingSoon('Оплата по NFC')}
+                    className="flex h-10 items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-3 backdrop-blur-md transition-all active:scale-95"
+                  >
+                    <span className="material-symbols-outlined text-sm text-[#003642]">contactless</span>
+                    <span className="text-[11px] font-semibold text-[#003642]">NFC</span>
+                  </button>
                 </div>
                 <button
                   aria-expanded={detailsOpen}
@@ -510,7 +665,7 @@ export default function HomePage() {
             <div className="mt-4 space-y-6 rounded-3xl border border-[#4cd6fb]/15 bg-[#0a1628]/90 p-5 shadow-xl backdrop-blur-sm">
               {sortedPrimaryLinked.length > 0 ? (
                 <div>
-                  <h3 className="mb-3 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#4cd6fb]/90">
+                  <h3 className="mb-1.5 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#4cd6fb]/90">
                     Карты {primaryBank}
                   </h3>
                   <ul className="space-y-3">
@@ -518,7 +673,7 @@ export default function HomePage() {
                       <PaymentCardListRow
                         key={item.id}
                         isUnlocked={isUnlocked}
-                        item={item}
+                        item={applyCardBalanceDelta(item)}
                         onSelect={setSelectedCard}
                         isPrimary={item.id === resolvedPrimaryId}
                       />
@@ -528,7 +683,7 @@ export default function HomePage() {
               ) : null}
 
               <div>
-                <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[#bcc9ce]">
+                <h3 className="mb-1.5 text-xs font-bold uppercase tracking-[0.2em] text-[#bcc9ce]">
                   Другие карты
                 </h3>
                 {sortedOtherLinked.length > 0 ? (
@@ -537,7 +692,7 @@ export default function HomePage() {
                       <PaymentCardListRow
                         key={item.id}
                         isUnlocked={isUnlocked}
-                        item={item}
+                        item={applyCardBalanceDelta(item)}
                         onSelect={setSelectedCard}
                         isPrimary={item.id === resolvedPrimaryId}
                       />
@@ -556,7 +711,7 @@ export default function HomePage() {
 
               {sortedAccountItems.length > 0 ? (
                 <div>
-                  <h3 className="mb-3 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#58d6f1]/90">
+                  <h3 className="mb-1.5 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#58d6f1]/90">
                     Счета {primaryBank}
                   </h3>
                   <ul className="space-y-3">
@@ -564,7 +719,7 @@ export default function HomePage() {
                       <PaymentCardListRow
                         key={item.id}
                         isUnlocked={isUnlocked}
-                        item={item}
+                        item={applyCardBalanceDelta(item)}
                         onSelect={setSelectedCard}
                         isPrimary={item.id === resolvedPrimaryId}
                       />
@@ -572,6 +727,15 @@ export default function HomePage() {
                   </ul>
                 </div>
               ) : null}
+
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#58d6f1]/35 bg-[#112036]/40 py-3.5 text-sm font-semibold text-[#58d6f1] transition-colors hover:border-[#58d6f1]/55 hover:bg-[#112036]"
+                onClick={() => setOpenAccountOpen(true)}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[20px]">add</span>
+                Открыть новый счёт
+              </button>
             </div>
           ) : null}
         </section>
@@ -595,7 +759,11 @@ export default function HomePage() {
             </div>
           </button>
 
-          <div className="rounded-2xl bg-[#112036] px-4 py-3 transition-colors hover:bg-[#1c2a41]">
+          <button
+            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
+            onClick={() => setPromotionsOpen(true)}
+            type="button"
+          >
             <div className="flex flex-col gap-2">
               <span className="material-symbols-outlined text-2xl text-[#58d6f1]">campaign</span>
               <div>
@@ -603,9 +771,13 @@ export default function HomePage() {
                 <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Кэшбэк до 30%</p>
               </div>
             </div>
-          </div>
+          </button>
 
-          <div className="rounded-2xl bg-[#112036] px-4 py-3 transition-colors hover:bg-[#1c2a41]">
+          <button
+            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
+            onClick={() => openComingSoon('Страхование')}
+            type="button"
+          >
             <div className="flex flex-col gap-2">
               <span className="material-symbols-outlined text-2xl text-[#4cd6fb]">
                 health_and_safety
@@ -615,9 +787,13 @@ export default function HomePage() {
                 <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Защита активов</p>
               </div>
             </div>
-          </div>
+          </button>
 
-          <div className="rounded-2xl bg-[#112036] px-4 py-3 transition-colors hover:bg-[#1c2a41]">
+          <button
+            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
+            onClick={() => setSpecialOffersAllOpen(true)}
+            type="button"
+          >
             <div className="flex flex-col gap-2">
               <span className="material-symbols-outlined text-2xl text-[#58d6f1]">local_offer</span>
               <div>
@@ -625,7 +801,7 @@ export default function HomePage() {
                 <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Для вас</p>
               </div>
             </div>
-          </div>
+          </button>
         </div>
 
         <section className="mb-10 overflow-hidden">
@@ -640,18 +816,24 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div className="relative overflow-hidden rounded-3xl">
+          <div
+            className="relative overflow-hidden rounded-3xl"
+            onTouchStart={handleOffersTouchStart}
+            onTouchEnd={handleOffersTouchEnd}
+          >
             <div
               className="flex transition-transform duration-500 ease-out"
               style={{ transform: `translateX(-${specialOfferIndex * 100}%)` }}
             >
               {SPECIAL_OFFERS.map((o) => (
-                <div
+                <button
                   key={o.id}
-                  className="relative flex h-40 min-w-full shrink-0 flex-col justify-end overflow-hidden bg-[#0d1c32] p-6"
+                  type="button"
+                  onClick={() => setSelectedOffer(o)}
+                  className="relative flex h-40 min-w-full shrink-0 flex-col justify-end overflow-hidden bg-[#0d1c32] p-6 text-left"
                 >
                   <img
-                    className="absolute inset-0 h-full w-full object-cover opacity-40"
+                    className={`absolute inset-0 h-full w-full object-cover opacity-40 ${o.coverImageClass ?? ''}`}
                     alt={o.imageAlt}
                     src={o.image}
                   />
@@ -663,7 +845,7 @@ export default function HomePage() {
                     </span>
                     <h4 className="text-lg font-bold leading-tight text-[#d6e3ff]">{o.title}</h4>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
             <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
@@ -683,7 +865,11 @@ export default function HomePage() {
         <section className="mb-10">
           <h2 className="mb-4 text-xl font-bold text-[#d6e3ff]">Виджеты мониторинга</h2>
           <div className="space-y-4">
-            <div className="flex items-center justify-between rounded-2xl bg-[#112036] p-6">
+            <button
+              type="button"
+              onClick={() => navigate('/monitoring', { state: { unlocked: true } })}
+              className="flex w-full items-center justify-between rounded-2xl bg-[#112036] p-6 text-left transition-colors hover:bg-[#1c2a41]"
+            >
               <div className="flex items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1c2a41] text-[#4cd6fb]">
                   <span className="material-symbols-outlined">analytics</span>
@@ -699,9 +885,13 @@ export default function HomePage() {
                 </p>
                 <p className="text-[10px] uppercase tracking-wider text-[#bcc9ce]">на 12% больше</p>
               </div>
-            </div>
+            </button>
 
-            <div className="flex items-center justify-between rounded-2xl bg-[#112036] p-6">
+            <button
+              type="button"
+              onClick={() => setCurrencyRatesOpen(true)}
+              className="flex w-full items-center justify-between rounded-2xl bg-[#112036] p-6 text-left transition-colors hover:bg-[#1c2a41]"
+            >
               <div className="flex items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1c2a41] text-[#58d6f1]">
                   <span className="material-symbols-outlined">currency_exchange</span>
@@ -729,7 +919,7 @@ export default function HomePage() {
                   </p>
                 </div>
               </div>
-            </div>
+            </button>
           </div>
         </section>
       </main>
@@ -754,6 +944,9 @@ export default function HomePage() {
         onSelectCard={setSelectedCard}
         onSetPrimary={handleSetPrimary}
         isPrimary={selectedCard != null && selectedCard.id === resolvedPrimaryId}
+        onTopUp={handleCardTopUp}
+        onWithdraw={handleCardWithdraw}
+        deposits={deposits}
       />
 
       <SpecialOffersAllSheet
@@ -789,6 +982,75 @@ export default function HomePage() {
           onWithdraw={handleDepositWithdraw}
         />
       ) : null}
+
+      <ComingSoonSheet
+        isOpen={comingSoonOpen}
+        title={comingSoonTitle}
+        onClose={() => setComingSoonOpen(false)}
+      />
+
+      <CurrencyRatesSheet
+        isOpen={currencyRatesOpen}
+        liveRates={rates}
+        onClose={() => setCurrencyRatesOpen(false)}
+      />
+
+      <PromotionsSheet
+        isOpen={promotionsOpen}
+        onClose={() => setPromotionsOpen(false)}
+      />
+
+      <OfferDetailSheet
+        offer={selectedOffer}
+        onClose={() => setSelectedOffer(null)}
+      />
+
+      <OpenAccountModal
+        isOpen={openAccountOpen}
+        onClose={() => setOpenAccountOpen(false)}
+        allUserCards={allUserCards}
+        rates={rates}
+        onAccountCreated={handleAccountCreated}
+      />
+
+      <AccountsOverviewSheet
+        accounts={userAccounts}
+        isOpen={accountsOverviewOpen}
+        isUnlocked={isUnlocked}
+        onClose={() => setAccountsOverviewOpen(false)}
+        onOpenNew={() => setOpenAccountOpen(true)}
+        onSelectAccount={(acc) => setSelectedAccount(acc)}
+      />
+
+      {selectedAccount ? (
+        <AccountDetailSheet
+          account={selectedAccount}
+          allUserCards={allUserCards}
+          rates={rates}
+          onClose={() => setSelectedAccount(null)}
+          onTopUp={handleAccountTopUp}
+          onWithdraw={handleAccountWithdraw}
+        />
+      ) : null}
+
+      <CardTopUpSheet
+        isOpen={cardTopUpTarget != null}
+        onClose={() => setCardTopUpTarget(null)}
+        targetCard={cardTopUpTarget}
+        allUserCards={allUserCards}
+        deposits={deposits}
+        onTopUpComplete={handleCardTopUpComplete}
+      />
+
+      <CardTransferSheet
+        isOpen={cardTransferOpen}
+        onClose={() => setCardTransferOpen(false)}
+        allUserCards={allUserCards}
+        preselectedCardId={cardTransferPreselected}
+        initialTab="card"
+        rates={rates}
+        onTransferComplete={handleTransferComplete}
+      />
     </div>
   )
 }

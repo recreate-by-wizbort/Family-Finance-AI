@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200;400;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 @import "tailwindcss";
+@source "./data/specialOffers.js";
 
 :root {
   color: #d6e3ff;
@@ -175,12 +176,84 @@ body {
   }
 }
 
+/* Центрированные модалки: плавное появление из центра */
+@keyframes coming-soon-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes coming-soon-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes coming-soon-backdrop-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes coming-soon-panel-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+}
+
+.animate-coming-soon-backdrop-in {
+  animation: coming-soon-backdrop-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-coming-soon-panel-in {
+  animation: coming-soon-panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: center center;
+}
+
+.animate-coming-soon-backdrop-out {
+  animation: coming-soon-backdrop-out 0.24s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-coming-soon-panel-out {
+  animation: coming-soon-panel-out 0.26s cubic-bezier(0.4, 0, 1, 1) forwards;
+  transform-origin: center center;
+}
+
 @media (prefers-reduced-motion: reduce) {
 
   .animate-sheet-backdrop-in,
   .animate-sheet-panel-in,
   .animate-sheet-backdrop-out,
   .animate-sheet-panel-out {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .animate-coming-soon-backdrop-in,
+  .animate-coming-soon-panel-in,
+  .animate-coming-soon-backdrop-out,
+  .animate-coming-soon-panel-out {
     animation: none;
     opacity: 1;
     transform: none;

@@ -1,32 +1,115 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
+import AddFavoriteRecipientSheet from '../components/AddFavoriteRecipientSheet'
+import CardTransferSheet from '../components/CardTransferSheet'
 import UzsAmount from '../components/UzsAmount'
+import useExchangeRates from '../hooks/useExchangeRates'
+import { computeAllUserCards } from '../utils/buildHomeUserCardsList'
+import { loadCardBalanceDeltas, saveCardBalanceDeltas } from '../utils/cardBalanceDeltas'
+import { addFavoriteRecipient, loadFavoriteRecipients } from '../utils/favoriteRecipients'
+import { loadPrimaryCardId, loadRemovedRowIds } from '../utils/deletedCards'
 import { isSessionUnlocked } from '../utils/sessionLock'
 
-const favoriteRecipients = [
-  {
-    name: 'Анна М.',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuBqtwgPv7U-lW5pwOEZZwKZnfPX5nH0hGAHLRK5WnNSTUfo0hr0GPUgsFr_lgmU6EXaZioqYrF4q78WY9sefBWGCzx5t2GkzliUYYQhrC4CIQrIk4CXMN0b59neR_n8Yzh4MwPCVt_Vz4E6UR8nKg-0p8jhXIM124GP8LUFt7jN7qe0QetnG_kVs8CnDQcI5zRKkG0aNveObd5yGnmGfSDrmipA0V0huXUEynlVm_ajt2V2VBQvLj72IwVHjbeTtCE_pzFDd-qC8brG',
-  },
-  {
-    name: 'Дмитрий П.',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCVhv-AwJ6Xysyj8aYvnqOuLPDA713ygZJNkX4UPp9JrajUTiFWwF-RKmxBO71XK9N2ch-BBpCZvhO15SI0rzs4ORVOyFf4O_-jDX1NmXcmEt8XvljrytWt5Ouxb6iO1bJIbiDL0pHRnVuqpmDRVYkIyWhUt4o44389gRQy5R7PXUP0ojFzeHwmW4bnprBNO1ehTQhOxVATZOG-WYSY4tEBVlrj0B2RMk4FaMlOvLchyz6ENiA49QwL0X0LWA8ygxrIABsThT_lgK-H',
-  },
-  {
-    name: 'Мама',
-    initials: 'КР',
-  },
-  {
-    name: 'Елена К.',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuD4R2l9JmNAm35BsxXsoA1BalcfowOFmkR4To9aZRLoJ5cG6pfzKIqlPhxAOpQTjV1cf-FMoyo-xhk96gDUtWkU9NsgvmhgQSaZdLg1Yjr6d2jU17tdRthaMer2h4MIxcw6cveSvM8lHpBrua3R5u1FhnO-uAC6XipqQq_z9uWKO_MX93CskEoTAFw878BAdcbMRA8ThaBPdnEPUlysjcMCselPus7u_79yQa0lF4d8TvVBAgfif8C6ZKUUAYJ9DM42TVDtxbJQNI4G',
-  },
-]
+function favoriteCanTransfer(f) {
+  if (f.method === 'phone' && String(f.phoneDigits || '').replace(/\D/g, '').length === 9) return true
+  if (f.method === 'card' && String(f.cardDigits || '').replace(/\D/g, '').length === 16) return true
+  return false
+}
 
 export default function TransferPage() {
   const isUnlocked = isSessionUnlocked()
+  const rates = useExchangeRates()
+  const location = useLocation()
+  const [transferOpen, setTransferOpen] = useState(() => Boolean(location.state?.openTransfer))
+  const [preselectedId, setPreselectedId] = useState(() => location.state?.preselectedCardId ?? null)
+  const [transferInitialTab, setTransferInitialTab] = useState(() =>
+    location.state?.transferTab === 'phone' ? 'phone' : 'card',
+  )
+  const [cardBalanceDeltas, setCardBalanceDeltas] = useState(() => loadCardBalanceDeltas())
+  const [favorites, setFavorites] = useState(() => loadFavoriteRecipients())
+  const [addFavoriteOpen, setAddFavoriteOpen] = useState(false)
+  const [pinnedRecipient, setPinnedRecipient] = useState(null)
+
+  useEffect(() => {
+    const syncBalances = () => setCardBalanceDeltas(loadCardBalanceDeltas())
+    const syncFav = () => setFavorites(loadFavoriteRecipients())
+    const syncAll = () => {
+      syncBalances()
+      syncFav()
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') syncAll()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', syncAll)
+    window.addEventListener('family-finance-favorites-changed', syncFav)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('focus', syncAll)
+      window.removeEventListener('family-finance-favorites-changed', syncFav)
+    }
+  }, [])
+
+  const allUserCards = useMemo(
+    () =>
+      computeAllUserCards({
+        cardBalanceDeltas,
+        removedRowIds: loadRemovedRowIds(),
+        primaryCardId: loadPrimaryCardId(),
+        renamedLabels: {},
+        userLinkedCards: [],
+      }),
+    [cardBalanceDeltas],
+  )
+
+  const handleTransferComplete = useCallback((cardId, amountUzs, debitInCardCurrency) => {
+    const d = debitInCardCurrency ?? amountUzs
+    setCardBalanceDeltas((prev) => {
+      const next = { ...prev, [cardId]: (prev[cardId] ?? 0) - d }
+      saveCardBalanceDeltas(next)
+      return next
+    })
+  }, [])
+
+  const openPhoneTransfer = useCallback(() => {
+    setPinnedRecipient(null)
+    setPreselectedId(null)
+    setTransferInitialTab('phone')
+    setTransferOpen(true)
+  }, [])
+
+  const openCardTransfer = useCallback(() => {
+    setPinnedRecipient(null)
+    setPreselectedId(null)
+    setTransferInitialTab('card')
+    setTransferOpen(true)
+  }, [])
+
+  const openFavoriteTransfer = useCallback((f) => {
+    if (!favoriteCanTransfer(f)) return
+    const cardDigits = f.method === 'card' ? String(f.cardDigits || '').replace(/\D/g, '').slice(0, 16) : ''
+    const phoneDigits = f.method === 'phone' ? String(f.phoneDigits || '').replace(/\D/g, '').slice(0, 9) : ''
+    setPinnedRecipient({
+      name: f.name,
+      method: f.method,
+      ...(f.method === 'card' ? { cardDigits } : {}),
+      ...(f.method === 'phone' ? { phoneDigits } : {}),
+    })
+    setPreselectedId(null)
+    setTransferInitialTab(f.method === 'phone' ? 'phone' : 'card')
+    setTransferOpen(true)
+  }, [])
+
+  useEffect(() => {
+    const st = location.state
+    if (!st?.openTransfer) return
+    setPinnedRecipient(null)
+    setTransferOpen(true)
+    setPreselectedId(st.preselectedCardId ?? null)
+    setTransferInitialTab(st.transferTab === 'phone' ? 'phone' : 'card')
+  }, [location.key, location.state?.openTransfer, location.state?.preselectedCardId, location.state?.transferTab])
 
   return (
     <div className="min-h-screen bg-[#041329] pb-32 text-[#d6e3ff]" style={{ minHeight: '100dvh' }}>
@@ -36,7 +119,11 @@ export default function TransferPage() {
         <section>
           <h1 className="mb-8 font-headline text-3xl font-extrabold tracking-tight">Переводы</h1>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-            <div className="group relative min-h-[220px] cursor-pointer overflow-hidden rounded-3xl bg-[#112036] p-8 transition-colors hover:bg-[#1c2a41] md:col-span-7">
+            <button
+              type="button"
+              onClick={openPhoneTransfer}
+              className="group relative min-h-[220px] cursor-pointer overflow-hidden rounded-3xl bg-[#112036] p-8 text-left transition-colors hover:bg-[#1c2a41] md:col-span-7"
+            >
               <div className="relative z-10">
                 <span className="material-symbols-outlined mb-4 block text-4xl text-[#4cd6fb]">smartphone</span>
                 <h3 className="mb-2 text-xl font-bold text-[#d6e3ff]">По номеру телефона</h3>
@@ -47,7 +134,7 @@ export default function TransferPage() {
                 Начать
                 <span className="material-symbols-outlined ml-1 text-sm">arrow_forward</span>
               </div>
-            </div>
+            </button>
 
             <div className="flex cursor-pointer flex-col justify-between rounded-3xl bg-[#0d1c32] p-6 transition-colors hover:bg-[#112036] md:col-span-5">
               <div>
@@ -61,7 +148,11 @@ export default function TransferPage() {
               </div>
             </div>
 
-            <div className="flex cursor-pointer items-center gap-5 rounded-3xl bg-[#0d1c32] p-6 transition-colors hover:bg-[#112036] md:col-span-6">
+            <button
+              type="button"
+              onClick={openCardTransfer}
+              className="flex cursor-pointer items-center gap-5 rounded-3xl bg-[#0d1c32] p-6 text-left transition-colors hover:bg-[#112036] md:col-span-6"
+            >
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#112036]">
                 <span className="material-symbols-outlined text-[#58d6f1]">credit_card</span>
               </div>
@@ -69,7 +160,7 @@ export default function TransferPage() {
                 <h3 className="font-bold text-[#d6e3ff]">По номеру карты</h3>
                 <p className="text-xs text-[#bcc9ce]">Любого банка мира</p>
               </div>
-            </div>
+            </button>
 
             <div className="flex cursor-pointer items-center gap-5 rounded-3xl bg-[#0d1c32] p-6 transition-colors hover:bg-[#112036] md:col-span-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#112036]">
@@ -91,28 +182,43 @@ export default function TransferPage() {
 
           <div className="no-scrollbar flex gap-4 overflow-x-auto pb-4">
             <div className="flex w-24 flex-shrink-0 flex-col items-center gap-3">
-              <button className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-[#3d494d]/30 text-[#bcc9ce] transition-all hover:border-[#4cd6fb]/50 hover:text-[#4cd6fb]">
+              <button
+                type="button"
+                onClick={() => setAddFavoriteOpen(true)}
+                className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-[#3d494d]/30 text-[#bcc9ce] transition-all hover:border-[#4cd6fb]/50 hover:text-[#4cd6fb]"
+              >
                 <span className="material-symbols-outlined text-3xl">add</span>
               </button>
-              <span className="text-center text-[11px] font-medium">Создать</span>
+              <span className="text-center text-[11px] font-medium">Добавить</span>
             </div>
 
-            {favoriteRecipients.map((person) => (
-              <div key={person.name} className="group flex w-24 flex-shrink-0 cursor-pointer flex-col items-center gap-3">
-                {person.image ? (
-                  <img
-                    alt={person.name}
-                    className="h-16 w-16 rounded-full object-cover ring-2 ring-transparent transition-all group-hover:ring-[#4cd6fb]"
-                    src={person.image}
-                  />
-                ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#27354c] text-xl font-bold text-[#4cd6fb]">
-                    {person.initials}
-                  </div>
-                )}
-                <span className="text-center text-[11px] font-medium">{person.name}</span>
-              </div>
-            ))}
+            {favorites.map((person) => {
+              const canOpen = favoriteCanTransfer(person)
+              return (
+                <button
+                  key={person.id}
+                  type="button"
+                  disabled={!canOpen}
+                  onClick={() => openFavoriteTransfer(person)}
+                  className={`group flex w-24 flex-shrink-0 flex-col items-center gap-3 ${
+                    canOpen ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                  }`}
+                >
+                  {person.image ? (
+                    <img
+                      alt={person.name}
+                      className="h-16 w-16 rounded-full object-cover ring-2 ring-transparent transition-all group-hover:ring-[#4cd6fb]"
+                      src={person.image}
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#27354c] text-xl font-bold text-[#4cd6fb]">
+                      {person.initials ?? person.name.slice(0, 1)}
+                    </div>
+                  )}
+                  <span className="text-center text-[11px] font-medium">{person.name}</span>
+                </button>
+              )
+            })}
           </div>
         </section>
 
@@ -224,6 +330,30 @@ export default function TransferPage() {
       </main>
 
       <AppBottomNav activeTab="transfers" isUnlocked={isUnlocked} />
+
+      <CardTransferSheet
+        isOpen={transferOpen}
+        onClose={() => {
+          setTransferOpen(false)
+          setPinnedRecipient(null)
+        }}
+        allUserCards={allUserCards}
+        preselectedCardId={preselectedId}
+        initialTab={transferInitialTab}
+        rates={rates}
+        pinnedRecipient={pinnedRecipient}
+        onAddToFavorites={() => setFavorites(loadFavoriteRecipients())}
+        onTransferComplete={handleTransferComplete}
+      />
+
+      <AddFavoriteRecipientSheet
+        isOpen={addFavoriteOpen}
+        onClose={() => setAddFavoriteOpen(false)}
+        onSaved={(entry) => {
+          addFavoriteRecipient(entry)
+          setFavorites(loadFavoriteRecipients())
+        }}
+      />
     </div>
   )
 }
