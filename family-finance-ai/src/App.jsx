@@ -2,7 +2,9 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import AllServicesPage from './pages/AllServicesPage'
 import RequirePinRoute from './components/RequirePinRoute'
 import HomePage from './pages/HomePage'
+import IncomePage from './pages/IncomePage'
 import MobileEntryPage from './pages/MobileEntryPage'
+import CostPage from './pages/CostPage'
 import MonitoringPage from './pages/MonitoringPage'
 import NotificationsPage from './pages/NotificationsPage'
 import PayPage from './pages/PayPage'
@@ -44,6 +46,22 @@ function App() {
           element={
             <RequirePinRoute>
               <MonitoringPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/cost"
+          element={
+            <RequirePinRoute>
+              <CostPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/income"
+          element={
+            <RequirePinRoute>
+              <IncomePage />
             </RequirePinRoute>
           }
         />

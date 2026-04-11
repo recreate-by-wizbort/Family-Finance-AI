@@ -158,6 +158,19 @@ export function getTotalExpenses(transactions = TRANSACTIONS) {
   )
 }
 
+/** Суммы по категориям для всех исходящих операций в переданном списке (в т.ч. переводы). */
+export function aggregateOutflowByCategory(transactions = []) {
+  return (transactions || []).reduce((acc, transaction) => {
+    if (transaction.direction !== 'out') {
+      return acc
+    }
+    const category = transaction.category || 'other'
+    const amount = Math.abs(Number(transaction.amountUzs) || 0)
+    acc[category] = (acc[category] || 0) + amount
+    return acc
+  }, {})
+}
+
 // 3. MONTH OVER MONTH
 export function getMonthOverMonthChange(transactions = TRANSACTIONS, referenceDate = new Date()) {
   const monthTransactions = getMonthTransactions(transactions, referenceDate)
