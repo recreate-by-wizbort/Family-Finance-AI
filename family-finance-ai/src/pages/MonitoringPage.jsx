@@ -712,34 +712,57 @@ export default function MonitoringPage() {
           </div>
 
           {visibleSegments.length > 0 ? (
-            <div className="mt-8 grid gap-3 md:grid-cols-2">
-              {visibleSegments.map((segment) => (
-                <div
-                  key={segment.category}
-                  className="flex items-center justify-between gap-3 rounded-full border px-3 py-2"
-                  style={{
-                    borderColor: `${segment.color}55`,
-                    background: `linear-gradient(112deg, ${segment.color}33 0%, rgba(17,32,54,0.92) 62%)`,
-                  }}
-                >
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/20 text-base"
-                      style={{ backgroundColor: segment.color }}
-                    >
-                      {segment.emoji}
-                    </span>
-                    <span className="truncate text-base font-semibold text-[#d6e3ff]">{segment.label}</span>
-                  </div>
+            <div className="mt-8 grid w-full grid-cols-2 gap-1.5 sm:gap-2 md:gap-2.5">
+              {visibleSegments.map((segment) => {
+                const listIcon = CATEGORY_ICON_MAP[segment.category] || CATEGORY_ICON_MAP.other
 
-                  <div className="shrink-0 text-right">
-                    <p className="text-base font-bold text-[#d6e3ff]">
-                      <UzsAmount as="span" value={String(Math.round(segment.amount))} />
-                    </p>
-                    <p className="text-[11px] font-medium tracking-wide text-[#9fb2c4]">{segment.percent}%</p>
+                return (
+                  <div
+                    key={segment.category}
+                    className="grid min-h-[2.625rem] w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-0 rounded-full border py-1 pl-1 pr-1.5 sm:min-h-[2.75rem] sm:gap-x-1.5 sm:py-1.5 sm:pl-1.5 sm:pr-2"
+                    style={{
+                      borderColor: `${segment.color}50`,
+                      background: `linear-gradient(95deg, ${segment.color}22 0%, rgba(17,32,54,0.9) 42%, rgba(17,28,46,0.94) 100%)`,
+                      boxShadow: `inset 0 1px 0 ${segment.color}18`,
+                    }}
+                  >
+                    <span
+                      className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full sm:h-8 sm:w-8"
+                      style={{
+                        backgroundColor: segment.color,
+                        boxShadow: `0 0 0 1px rgba(255,255,255,0.2) inset`,
+                      }}
+                    >
+                      <span
+                        className="material-symbols-outlined pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[0.9rem] leading-none text-white sm:text-[0.95rem]"
+                        style={{
+                          fontVariationSettings: '"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 20',
+                        }}
+                      >
+                        {listIcon}
+                      </span>
+                    </span>
+
+                    <span
+                      lang="ru"
+                      className="min-w-0 hyphens-auto break-words text-left text-[11px] font-medium leading-[1.2] tracking-tight text-[#e8eef9] [overflow-wrap:anywhere] line-clamp-2 sm:text-[12px] md:text-[13px]"
+                    >
+                      {segment.label}
+                    </span>
+
+                    <div className="shrink-0 justify-self-end whitespace-nowrap text-right text-[10px] font-semibold leading-none tabular-nums text-[#e8eef9] sm:text-[11px] md:text-xs">
+                      <UzsAmount
+                        as="span"
+                        className="inline-flex items-baseline leading-none"
+                        compact
+                        compactFrom={1_000_000}
+                        currencyClassName="ml-0.5 inline-block shrink-0 align-baseline text-[0.52em] font-semibold uppercase tracking-wide text-[#aab8ce] sm:text-[0.55em]"
+                        value={String(Math.round(segment.amount))}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : null}
         </section>
@@ -767,7 +790,12 @@ export default function MonitoringPage() {
                       </p>
                     </div>
                     <p className="font-semibold text-[#d6e3ff]">
-                      <UzsAmount as="span" value={`- ${Math.round(operation.amountUzs)}`} />
+                      <UzsAmount
+                        as="span"
+                        compact
+                        compactFrom={1_000_000}
+                        value={`- ${Math.round(operation.amountUzs)}`}
+                      />
                     </p>
                   </div>
                 )

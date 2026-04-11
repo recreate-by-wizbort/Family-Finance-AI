@@ -322,18 +322,18 @@ export function formatUzsGroupedRu(amount) {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n)
 }
 
-/** Короткая запись: млн / млрд / тыс — чтобы длинные суммы не ломали вёрстку. */
+/** Короткая запись: млн / млрд / тыс — чтобы длинные суммы не ломали вёрстку. От ≥1 млн — одна цифра после запятой (2,2 млн). */
 export function formatUzsShortRu(amount) {
   const sign = amount < 0 ? '-' : ''
   const value = Math.abs(Math.round(amount))
 
   if (value >= 1_000_000_000) {
     const x = value / 1_000_000_000
-    return `${sign}${x.toLocaleString('ru-RU', { maximumFractionDigits: 2, minimumFractionDigits: 0 })} млрд`
+    return `${sign}${x.toLocaleString('ru-RU', { maximumFractionDigits: 1, minimumFractionDigits: 0 })} млрд`
   }
   if (value >= 1_000_000) {
     const x = value / 1_000_000
-    return `${sign}${x.toLocaleString('ru-RU', { maximumFractionDigits: 2, minimumFractionDigits: 0 })} млн`
+    return `${sign}${x.toLocaleString('ru-RU', { maximumFractionDigits: 1, minimumFractionDigits: 0 })} млн`
   }
   if (value >= 1_000) {
     return `${sign}${Math.round(value / 1_000).toLocaleString('ru-RU')} тыс`
