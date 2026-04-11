@@ -90,6 +90,9 @@ const CATEGORY_RING_COLOR_OVERRIDES = {
 const MAIN_RING_RADIUS = 99
 const MAIN_RING_STROKE_WIDTH = 34
 const ICON_GLYPH_SIZE = Math.round(MAIN_RING_STROKE_WIDTH * 0.6)
+/** Единый размер кружка с иконкой на кольце (как у линии / stroke). */
+const ICON_BADGE_DIAMETER = MAIN_RING_STROKE_WIDTH
+const ICON_BADGE_GLYPH = Math.min(ICON_GLYPH_SIZE, Math.round(ICON_BADGE_DIAMETER * 0.56))
 const PERCENT_LABEL_RADIUS = 144
 const PERCENT_LABEL_BOX_WIDTH = 66
 const RING_BOUNDARY_GAP_PERCENT = 1.1
@@ -201,7 +204,6 @@ export default function MonitoringPage() {
             const startAngleDeg = toRingAngle(arcStart, RING_DRAW_CLOCKWISE)
             const endAngleDeg = toRingAngle(arcEnd, RING_DRAW_CLOCKWISE)
             const arcSweepDeg = ((endAngleDeg - startAngleDeg) % 360 + 360) % 360
-            const iconSize = ICON_GLYPH_SIZE
             const iconAngleDeg = RING_DRAW_CLOCKWISE ? endAngleDeg - 0.2 : endAngleDeg + 0.2
             const iconPoint = pointOnCircle(center, center, iconRadius, iconAngleDeg)
 
@@ -216,9 +218,7 @@ export default function MonitoringPage() {
               adjustedLabelY: labelPoint.y,
               iconX: iconPoint.x,
               iconY: iconPoint.y,
-              iconSize,
               showPercent: true,
-              showIcon: arcSweepDeg >= 14,
               showArc: arcSweepDeg >= 0.8,
             }
           })
@@ -405,6 +405,8 @@ export default function MonitoringPage() {
   const monthLabel = selectedSnapshot.label
   const amountValue = isUnlocked ? String(Math.round(currentTotal)) : '•••••••'
   const changeValue = isUnlocked ? `${monthChange >= 0 ? '+' : ''}${monthChange}%` : '•••%'
+  /** Для трат: минус к прошлому месяцу = хорошо (синий), плюс = рост трат (красный). */
+  const changeBadgeKind = !isUnlocked ? 'masked' : changeValue.startsWith('-') ? 'down' : 'up'
 
   const visibleSegments = isUnlocked ? chartSegments : []
   const recentOperations = isUnlocked
@@ -498,7 +500,6 @@ export default function MonitoringPage() {
         )}
 
         {[...layerMetrics]
-          .filter(s => s.showIcon)
           .sort((a, b) => a.centerAngleDeg - b.centerAngleDeg)
           .map((segment) => (
             <div
@@ -507,19 +508,23 @@ export default function MonitoringPage() {
               style={{
                 left: `${segment.iconX}px`,
                 top: `${segment.iconY}px`,
-                width: `${segment.iconSize + 10}px`,
-                height: `${segment.iconSize + 10}px`,
+                width: `${ICON_BADGE_DIAMETER}px`,
+                height: `${ICON_BADGE_DIAMETER}px`,
                 backgroundColor: segment.color,
-                boxShadow: `0 2px 8px ${segment.color}55`,
+                border: '1px solid rgba(255, 255, 255, 0.22)',
+                boxShadow: `inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 6px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.12)`,
                 zIndex: Math.round(360 - segment.centerAngleDeg),
               }}
             >
               <span
                 className="material-symbols-outlined"
                 style={{
-                  fontSize: `${segment.iconSize - 4}px`,
+                  fontSize: `${ICON_BADGE_GLYPH}px`,
                   lineHeight: 1,
-                  color: 'rgba(255,255,255,0.95)',
+                  color: 'rgba(255, 255, 255, 0.98)',
+                  textShadow:
+                    '0 0 1px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 8px rgba(0, 0, 0, 0.25)',
+                  fontVariationSettings: '"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24',
                 }}
               >
                 {segment.icon}
@@ -664,17 +669,37 @@ export default function MonitoringPage() {
                 : null}
             </div>
 
-            <div className="mb-3 flex items-end justify-center gap-3 md:gap-4">
-              <h2 className="text-5xl font-extrabold leading-none tracking-tight text-[#d6e3ff] md:text-6xl">
-                <UzsAmount as="span" value={amountValue} />
+            <div className="mb-3 flex min-w-0 flex-wrap items-end justify-center gap-2 sm:gap-2.5 md:gap-3">
+              <h2 className="min-w-0 max-w-full text-center text-4xl font-extrabold leading-none tracking-tight text-[#d6e3ff] sm:text-5xl md:text-5xl lg:text-6xl">
+                <UzsAmount
+                  as="span"
+                  compact
+                  compactFrom={1_000_000}
+                  currencyPlacement="below"
+                  value={amountValue}
+                />
               </h2>
               <p
-                className={`rounded-full border px-3 py-1 text-lg font-bold md:text-xl ${
-                  changeValue.startsWith('-') ? 'text-[#ffb4ab]' : 'text-[#58d6f1]'
+                className={`shrink-0 rounded-full border px-2.5 py-1 text-sm font-bold sm:text-base md:px-3 md:py-1.5 md:text-lg ${
+                  changeBadgeKind === 'masked'
+                    ? 'text-[#9fb2c4]'
+                    : changeBadgeKind === 'down'
+                      ? 'text-[#58d6f1]'
+                      : 'text-[#ffb4ab]'
                 }`}
                 style={{
-                  borderColor: changeValue.startsWith('-') ? 'rgba(255, 180, 171, 0.35)' : 'rgba(88, 214, 241, 0.35)',
-                  backgroundColor: changeValue.startsWith('-') ? 'rgba(255, 180, 171, 0.08)' : 'rgba(88, 214, 241, 0.08)',
+                  borderColor:
+                    changeBadgeKind === 'masked'
+                      ? 'rgba(159, 178, 196, 0.35)'
+                      : changeBadgeKind === 'down'
+                        ? 'rgba(88, 214, 241, 0.35)'
+                        : 'rgba(255, 180, 171, 0.35)',
+                  backgroundColor:
+                    changeBadgeKind === 'masked'
+                      ? 'rgba(159, 178, 196, 0.08)'
+                      : changeBadgeKind === 'down'
+                        ? 'rgba(88, 214, 241, 0.08)'
+                        : 'rgba(255, 180, 171, 0.08)',
                 }}
               >
                 {changeValue}
