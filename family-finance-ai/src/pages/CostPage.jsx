@@ -1149,8 +1149,14 @@ export default function CostPage({ mode = 'debit' }) {
           }}
         />
 
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="font-headline text-2xl font-extrabold text-[#d6e3ff]">{layerMonthLabel}</span>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
+          <span
+            className={`font-headline font-extrabold leading-snug text-[#d6e3ff] ${
+              periodMode === 'week' ? 'max-w-[12.5rem] text-base sm:text-lg' : 'text-2xl'
+            }`}
+          >
+            {layerMonthLabel}
+          </span>
         </div>
 
         {layerMetricsResolved.map((segment) =>
@@ -1174,7 +1180,14 @@ export default function CostPage({ mode = 'debit' }) {
         )}
 
         {[...layerMetricsResolved]
-          .sort((a, b) => (a.iconAngleDeg ?? a.endDeg) - (b.iconAngleDeg ?? b.endDeg))
+          .sort((a, b) => {
+            const aCard = a.category === 'card_balance'
+            const bCard = b.category === 'card_balance'
+            if (aCard !== bCard) {
+              return aCard ? 1 : -1
+            }
+            return (a.iconAngleDeg ?? a.endDeg) - (b.iconAngleDeg ?? b.endDeg)
+          })
           .map((segment, badgeIndex) => (
             <div
               key={`${layerKey}-badge-${segment.category}`}
@@ -1366,7 +1379,7 @@ export default function CostPage({ mode = 'debit' }) {
                 </button>
                 {accountFilterMenuOpen ? (
                   <ul
-                    className="absolute left-0 top-[calc(100%+0.375rem)] z-50 max-h-[min(20rem,50vh)] w-[min(100%,18rem)] overflow-y-auto rounded-2xl border border-white/12 bg-[#0f1828]/92 py-1 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-[#0f1828]/78"
+                    className="absolute left-0 top-[calc(100%+0.375rem)] z-50 max-h-[min(20rem,50vh)] w-[calc(200%+0.625rem-2.75rem)] max-w-[min(calc(200%+0.625rem-2.75rem),calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-white/12 bg-[#0f1828]/92 py-1 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-[#0f1828]/78"
                     id="monitoring-account-filter-listbox"
                     role="listbox"
                   >
@@ -1376,9 +1389,9 @@ export default function CostPage({ mode = 'debit' }) {
                         <li key={option.id} role="presentation">
                           <button
                             aria-selected={selected}
-                            className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors ${
+                            className={`flex w-full items-center px-3 py-2.5 text-left text-sm transition-colors ${
                               selected
-                                ? 'bg-amber-500/35 text-white'
+                                ? 'bg-[#4cd6fb]/22 text-[#eaf8ff]'
                                 : 'text-[#d6e3ff] hover:bg-white/5'
                             }`}
                             role="option"
@@ -1389,17 +1402,6 @@ export default function CostPage({ mode = 'debit' }) {
                               setSelectedPeriodKey(null)
                             }}
                           >
-                            {selected ? (
-                              <span
-                                aria-hidden
-                                className="material-symbols-outlined shrink-0 text-lg text-amber-200"
-                                style={{ fontVariationSettings: '"FILL" 1' }}
-                              >
-                                check
-                              </span>
-                            ) : (
-                              <span aria-hidden className="inline-block w-6 shrink-0" />
-                            )}
                             <span className="truncate">{option.label}</span>
                           </button>
                         </li>
