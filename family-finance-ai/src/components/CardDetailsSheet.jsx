@@ -38,10 +38,12 @@ function formatForeignMovement(amount) {
 
 export default function CardDetailsSheet({ card, isOpen, onClose, isUnlocked }) {
   const [tab, setTab] = useState('all')
+  const [isClosing, setIsClosing] = useState(false)
 
   useEffect(() => {
     if (!isOpen) return
     setTab('all')
+    setIsClosing(false)
   }, [isOpen, card?.id])
 
   useEffect(() => {
@@ -56,11 +58,20 @@ export default function CardDetailsSheet({ card, isOpen, onClose, isUnlocked }) 
   useEffect(() => {
     if (!isOpen) return
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') setIsClosing(true)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isOpen, onClose])
+  }, [isOpen])
+
+  const requestClose = () => setIsClosing(true)
+
+  const handlePanelAnimationEnd = (e) => {
+    if (e.target !== e.currentTarget) return
+    const name = String(e.animationName || '')
+    if (!isClosing || !name.includes('sheet-panel-out')) return
+    onClose()
+  }
 
   const movements = useMemo(() => {
     if (!card) return []
@@ -94,13 +105,16 @@ export default function CardDetailsSheet({ card, isOpen, onClose, isUnlocked }) 
       <button
         aria-label="Закрыть"
         className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-        onClick={onClose}
+        onClick={requestClose}
         type="button"
       />
       <div
         aria-labelledby="card-sheet-title"
         aria-modal="true"
-        className="relative z-10 flex h-[min(85dvh,640px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-3xl"
+        className={`relative z-10 flex h-[min(85dvh,640px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-3xl ${
+          isClosing ? 'animate-sheet-panel-out' : 'animate-sheet-panel-in'
+        }`}
+        onAnimationEnd={handlePanelAnimationEnd}
         role="dialog"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-[#1c2a41] px-5 py-4">
@@ -112,7 +126,7 @@ export default function CardDetailsSheet({ card, isOpen, onClose, isUnlocked }) 
           </h2>
           <button
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#bcc9ce] hover:bg-[#112036] hover:text-[#4cd6fb]"
-            onClick={onClose}
+            onClick={requestClose}
             type="button"
           >
             <span className="material-symbols-outlined">close</span>
