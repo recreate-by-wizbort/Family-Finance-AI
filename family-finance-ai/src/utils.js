@@ -309,27 +309,76 @@ export function calcRequiredMonthlyDeposit(goal, referenceDate = new Date()) {
 }
 
 // 6. FORMATTING
-export function formatMoney(amount) {
+/**
+ * Разбирает строку суммы (цифры, пробелы, «−»/«-», маска из точек) в целое число.
+ * @returns {{ type: 'number', value: number } | { type: 'masked', display: string } | { type: 'raw', display: string }}
+ */
+export function parseUzsAmountString(value) {
+  if (value == null) {
+    return { type: 'raw', display: '' }
+  }
+  let s = String(value).replace(/\u00a0/g, ' ').trim()
+  if (!s) {
+    return { type: 'raw', display: '' }
+  }
+  const noCurrency = s.replace(/\s*(₽|UZS)\s*$/i, '').trim()
+  if (/^[•…\s]+$/.test(noCurrency) || /^[•…]+$/.test(noCurrency.replace(/\s/g, ''))) {
+    return { type: 'masked', display: noCurrency }
+  }
+  let body = noCurrency
+  let neg = false
+  const minusMatch = body.match(/^([\u2212\-−])\s*(.*)$/)
+  if (minusMatch) {
+    neg = true
+    body = minusMatch[2].trim()
+  }
+  const normalized = body.replace(/\s/g, '').replace(',', '.')
+  if (normalized === '' || normalized === '.') {
+    return { type: 'raw', display: s }
+  }
+  const n = Number(normalized)
+  if (Number.isNaN(n)) {
+    return { type: 'raw', display: s }
+  }
+  const rounded = Math.round(n)
+  return { type: 'number', value: neg ? -rounded : rounded }
+}
+
+/** Группы разрядов (1 234 567) для ru-RU. */
+export function formatUzsGroupedRu(amount) {
+  const n = Math.round(Number(amount))
+  if (Number.isNaN(n)) {
+    return String(amount)
+  }
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n)
+}
+
+/** Короткая запись: млн / млрд / тыс — чтобы длинные суммы не ломали вёрстку. От ≥1 млн — одна цифра после запятой (2,2 млн). */
+export function formatUzsShortRu(amount) {
   const sign = amount < 0 ? '-' : ''
   const value = Math.abs(Math.round(amount))
-  return `${sign}${new Intl.NumberFormat('ru-RU').format(value)} UZS`
+
+  if (value >= 1_000_000_000) {
+    const x = value / 1_000_000_000
+    return `${sign}${x.toLocaleString('ru-RU', { maximumFractionDigits: 1, minimumFractionDigits: 0 })} млрд`
+  }
+  if (value >= 1_000_000) {
+    const x = value / 1_000_000
+    return `${sign}${x.toLocaleString('ru-RU', { maximumFractionDigits: 1, minimumFractionDigits: 0 })} млн`
+  }
+  if (value >= 1_000) {
+    return `${sign}${Math.round(value / 1_000).toLocaleString('ru-RU')} тыс`
+  }
+
+  return `${sign}${value.toLocaleString('ru-RU')}`
+}
+
+export function formatMoney(amount) {
+  return `${formatUzsGroupedRu(amount)} UZS`
 }
 
 export function formatMoneyShort(amount) {
-  const sign = amount < 0 ? '-' : ''
-  const value = Math.abs(amount)
-
-  if (value >= 1_000_000_000) {
-    return `${sign}${(value / 1_000_000_000).toFixed(1)} млрд`
-  }
-  if (value >= 1_000_000) {
-    return `${sign}${(value / 1_000_000).toFixed(1)} млн`
-  }
-  if (value >= 1_000) {
-    return `${sign}${Math.round(value / 1_000)} тыс`
-  }
-
-  return `${sign}${Math.round(value)}`
+  return formatUzsShortRu(amount)
 }
 
 export function getChangeColor(pct) {
