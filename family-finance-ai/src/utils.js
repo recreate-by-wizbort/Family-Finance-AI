@@ -5,6 +5,7 @@ import {
   FILTER_PERIODS,
   GOALS,
   LAST_MONTH_STATS,
+  LINKED_EXTERNAL_CARDS,
   MCC_CATEGORY_RULES,
   NON_EXPENSE_KINDS,
   TRANSACTIONS,
@@ -225,13 +226,43 @@ export function getBudgetForecast(transactions = TRANSACTIONS, referenceDate = n
 export function getTotalBalance(accounts = ACCOUNTS) {
   return accounts
     .filter((account) => account.type !== 'deposit')
-    .reduce((sum, account) => sum + account.balanceUzs, 0)
+    .reduce((sum, account) => {
+      if (account.currency && account.currency !== 'UZS') {
+        return sum
+      }
+      return sum + Number(account.balanceUzs ?? 0)
+    }, 0)
+}
+
+/** Сумма по платёжным картам/счетам (без вкладов) и привязанным картам HUMO/UZCARD для пользователя. */
+export function getPaymentCardsTotalUzs(
+  userId,
+  accounts = ACCOUNTS,
+  linkedCards = LINKED_EXTERNAL_CARDS
+) {
+  const fromAccounts = accounts
+    .filter((a) => a.userId === userId && a.type !== 'deposit')
+    .reduce((sum, a) => {
+      if (a.currency && a.currency !== 'UZS') {
+        return sum
+      }
+      return sum + Number(a.balanceUzs ?? 0)
+    }, 0)
+  const fromLinked = linkedCards
+    .filter((c) => c.ownerUserId === userId)
+    .reduce((sum, c) => sum + (typeof c.balanceUzs === 'number' ? c.balanceUzs : 0), 0)
+  return Math.round((fromAccounts + fromLinked) * 100) / 100
 }
 
 export function getMemberBalance(userId, accounts = ACCOUNTS) {
   return accounts
     .filter((account) => account.userId === userId && account.type !== 'deposit')
-    .reduce((sum, account) => sum + account.balanceUzs, 0)
+    .reduce((sum, account) => {
+      if (account.currency && account.currency !== 'UZS') {
+        return sum
+      }
+      return sum + Number(account.balanceUzs ?? 0)
+    }, 0)
 }
 
 // 5. GOALS

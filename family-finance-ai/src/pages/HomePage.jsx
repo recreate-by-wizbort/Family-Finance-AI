@@ -1,14 +1,147 @@
+import { useMemo, useState } from 'react'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
+import AddLinkedCardModal from '../components/AddLinkedCardModal'
+import CardDetailsSheet from '../components/CardDetailsSheet'
+import PaymentCardListRow from '../components/PaymentCardListRow'
 import UzsAmount from '../components/UzsAmount'
 import useExchangeRates from '../hooks/useExchangeRates'
+import { ACCOUNTS, LINKED_EXTERNAL_CARDS, PRIMARY_BANK_RECREATE } from '../mockData'
 import { isSessionUnlocked } from '../utils/sessionLock'
+import { getPaymentCardsTotalUzs } from '../utils'
+
+const HOME_OWNER_ID = 'user_1'
+const PRIMARY_ACCOUNT_ID = 'acc_tbc_main'
+/** Счёт всегда в конце общего списка карт (после остальных счетов и привязанных карт). */
+const TRAILING_LIST_ACCOUNT_ID = 'acc_hamkor_current'
+
+function last4FromPan(pan) {
+  const d = String(pan).replace(/\D/g, '')
+  return d.slice(-4)
+}
+
+function formatUzsBalance(amount) {
+  return Number(amount)
+    .toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    .replace(',', '.')
+}
 
 export default function HomePage() {
   const isUnlocked = isSessionUnlocked()
   const rates = useExchangeRates()
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [selectedCard, setSelectedCard] = useState(null)
+  const [userLinkedCards, setUserLinkedCards] = useState([])
+  const [addCardOpen, setAddCardOpen] = useState(false)
 
-  const balanceValue = isUnlocked ? '2 450 800.00' : '••••••'
+  const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems, baseTotalUzs } =
+    useMemo(() => {
+      const primary = ACCOUNTS.find((a) => a.id === PRIMARY_ACCOUNT_ID)
+      const bank = primary?.bank ?? PRIMARY_BANK_RECREATE
+
+      const myAccounts = ACCOUNTS.filter((a) => a.userId === HOME_OWNER_ID)
+      const myLinked = LINKED_EXTERNAL_CARDS.filter((c) => c.ownerUserId === HOME_OWNER_ID)
+
+      const primaryLinked = []
+      const otherLinked = []
+      const accounts = []
+
+      const accountRowFromAcc = (acc) => {
+        const last4 = last4FromPan(acc.card.pan)
+        const isFx = acc.currency && acc.currency !== 'UZS'
+        return {
+          id: acc.id,
+          kind: 'account',
+          sheetTitle: acc.label,
+          detailLine: `${last4} · ${acc.bank}`,
+          balanceUzs: acc.balanceUzs ?? 0,
+          foreignCurrency: isFx ? acc.currency : null,
+          balanceForeign: isFx && acc.balanceForeign != null ? acc.balanceForeign : null,
+          processingSystem: acc.card.processingSystem,
+          pan: acc.card.pan,
+          last4,
+          expires: acc.card.expires,
+          holderName: acc.card.holderName,
+          movementsAccountId: acc.id,
+          linkedMovementsCardId: null,
+        }
+      }
+
+      myAccounts.forEach((acc) => {
+        if (acc.type === 'deposit' || !acc.card || acc.bank !== bank) {
+          return
+        }
+        if (acc.id === TRAILING_LIST_ACCOUNT_ID) {
+          return
+        }
+        accounts.push(accountRowFromAcc(acc))
+      })
+
+      const trailingAcc = myAccounts.find((a) => a.id === TRAILING_LIST_ACCOUNT_ID)
+      if (trailingAcc?.card && trailingAcc.type !== 'deposit' && trailingAcc.bank === bank) {
+        accounts.push(accountRowFromAcc(trailingAcc))
+      }
+
+      myLinked.forEach((card) => {
+        const balanceUzs = typeof card.balanceUzs === 'number' ? card.balanceUzs : 0
+        const last4 = last4FromPan(card.pan)
+        const label = card.userLabel?.trim() || 'Карта'
+        const row = {
+          id: card.id,
+          kind: 'linked',
+          sheetTitle: label,
+          detailLine: `${last4} · ${card.bank}`,
+          balanceUzs,
+          processingSystem: card.processingSystem,
+          pan: card.pan,
+          last4,
+          expires: card.expires,
+          holderName: card.holderName,
+          movementsAccountId: null,
+          linkedMovementsCardId: card.id,
+        }
+        if (card.bank === bank) {
+          primaryLinked.push(row)
+        } else {
+          otherLinked.push(row)
+        }
+      })
+
+      const baseTotalUzs = getPaymentCardsTotalUzs(HOME_OWNER_ID)
+
+      return {
+        primaryBank: bank,
+        primaryLinkedItems: primaryLinked,
+        otherLinkedBase: otherLinked,
+        accountItems: accounts,
+        baseTotalUzs,
+      }
+    }, [])
+
+  const otherLinkedItems = useMemo(() => {
+    const extra = userLinkedCards.map((c) => ({
+      id: c.id,
+      kind: 'linked',
+      sheetTitle: c.userLabel?.trim() || 'Новая карта',
+      detailLine: `${last4FromPan(c.pan)} · ${c.bank}`,
+      balanceUzs: c.balanceUzs,
+      processingSystem: c.processingSystem,
+      pan: c.pan,
+      last4: last4FromPan(c.pan),
+      expires: c.expires,
+      holderName: c.holderName,
+      movementsAccountId: null,
+      linkedMovementsCardId: c.id,
+    }))
+    return [...otherLinkedBase, ...extra]
+  }, [otherLinkedBase, userLinkedCards])
+
+  const totalPaymentUzs =
+    baseTotalUzs +
+    userLinkedCards.reduce((sum, c) => sum + Number(c.balanceUzs), 0)
+  const totalPaymentUzsRounded = Math.round(totalPaymentUzs * 100) / 100
+
+  const balanceValue = isUnlocked ? formatUzsBalance(totalPaymentUzsRounded) : '••••••'
   const spendingValue = isUnlocked ? '- 142 500' : '- ••••••'
   const usdValue = isUnlocked ? rates.USD.rate.toLocaleString('ru-RU') : '•••'
   const eurValue = isUnlocked ? rates.EUR.rate.toLocaleString('ru-RU') : '•••'
@@ -54,13 +187,93 @@ export default function HomePage() {
                     </span>
                   </div>
                 </div>
-                <button className="flex items-center gap-2 rounded-full bg-[#003642] px-5 py-2 text-sm font-bold text-[#4cd6fb] transition-all hover:opacity-90 active:scale-95">
+                <button
+                  aria-expanded={detailsOpen}
+                  className="flex items-center gap-2 rounded-full bg-[#003642] px-5 py-2 text-sm font-bold text-[#4cd6fb] transition-all hover:opacity-90 active:scale-95"
+                  onClick={() => setDetailsOpen((open) => !open)}
+                  type="button"
+                >
                   Детали
-                  <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+                  <span
+                    className={`material-symbols-outlined text-sm transition-transform duration-200 ${
+                      detailsOpen ? 'rotate-180' : ''
+                    }`}
+                  >
+                    keyboard_arrow_down
+                  </span>
                 </button>
               </div>
             </div>
           </div>
+
+          {detailsOpen ? (
+            <div className="mt-4 space-y-6 rounded-3xl border border-[#4cd6fb]/15 bg-[#0a1628]/90 p-5 shadow-xl backdrop-blur-sm">
+              {primaryLinkedItems.length > 0 ? (
+                <div>
+                  <h3 className="mb-3 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#4cd6fb]/90">
+                    Карты {primaryBank}
+                  </h3>
+                  <ul className="space-y-3">
+                    {primaryLinkedItems.map((item) => (
+                      <PaymentCardListRow
+                        key={item.id}
+                        formatBalance={formatUzsBalance}
+                        isUnlocked={isUnlocked}
+                        item={item}
+                        onSelect={setSelectedCard}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div>
+                <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[#bcc9ce]">
+                  Другие карты
+                </h3>
+                {otherLinkedItems.length > 0 ? (
+                  <ul className="space-y-3">
+                    {otherLinkedItems.map((item) => (
+                      <PaymentCardListRow
+                        key={item.id}
+                        formatBalance={formatUzsBalance}
+                        isUnlocked={isUnlocked}
+                        item={item}
+                        onSelect={setSelectedCard}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
+                <button
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#4cd6fb]/35 bg-[#112036]/40 py-3.5 text-sm font-semibold text-[#4cd6fb] transition-colors hover:border-[#4cd6fb]/55 hover:bg-[#112036]"
+                  onClick={() => setAddCardOpen(true)}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-[20px]">add</span>
+                  Добавить карту
+                </button>
+              </div>
+
+              {accountItems.length > 0 ? (
+                <div>
+                  <h3 className="mb-3 break-words text-xs font-bold uppercase leading-snug tracking-[0.2em] text-[#58d6f1]/90">
+                    Счета {primaryBank}
+                  </h3>
+                  <ul className="space-y-3">
+                    {accountItems.map((item) => (
+                      <PaymentCardListRow
+                        key={item.id}
+                        formatBalance={formatUzsBalance}
+                        isUnlocked={isUnlocked}
+                        item={item}
+                        onSelect={setSelectedCard}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <div className="mb-10 grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -219,6 +432,19 @@ export default function HomePage() {
       </main>
 
       <AppBottomNav activeTab="home" isUnlocked={isUnlocked} />
+
+      <AddLinkedCardModal
+        isOpen={addCardOpen}
+        onAdd={(card) => setUserLinkedCards((prev) => [...prev, card])}
+        onClose={() => setAddCardOpen(false)}
+      />
+
+      <CardDetailsSheet
+        card={selectedCard}
+        isOpen={selectedCard != null}
+        isUnlocked={isUnlocked}
+        onClose={() => setSelectedCard(null)}
+      />
     </div>
   )
 }
