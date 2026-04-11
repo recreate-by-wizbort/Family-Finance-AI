@@ -747,7 +747,7 @@ function buildYearTransactions() {
               mcc: null,
               amountUzs: microloanAmountUzs,
               merchant: 'Microfinance 24%',
-              category: 'income',
+              category: 'microloan',
               description: `Получение микрозайма (${monthCode}) на ${Math.round(microloanAmountUzs).toLocaleString('ru-RU')} до ${repaymentAt.slice(0, 10)}`,
             })
             cycleSpendableUzs += microloanAmountUzs
@@ -779,7 +779,13 @@ function buildYearTransactions() {
     const salaryAmountUzs = MONTHLY_SALARY_UZS
     const familyTransferAmountUzs = amountWithVariation(1450000, monthIndex, 91, 1050000)
     const depositTopupAmountUzs = amountWithVariation(820000, monthIndex, 95, 500000)
-    const depositWithdrawalAmountUzs = amountWithVariation(640000, monthIndex, 96, 350000)
+    /** Снятие со вклада всегда меньше пополнения; одна пара операций каждый месяц. */
+    const depositWithdrawalRaw = amountWithVariation(640000, monthIndex, 96, 350000)
+    const depositWithdrawalAmountUzs = Math.min(
+      depositWithdrawalRaw,
+      Math.max(350000, depositTopupAmountUzs - 100_000),
+      depositTopupAmountUzs - 1000,
+    )
     const goalTopupAmountUzs = amountWithVariation(1900000, monthIndex, 92, 1200000)
     const p2pTransferAmountUzs = amountWithVariation(950000, monthIndex, 97, 400000)
     /** Отдельное пополнение вклада (категория «Вклад»), помимо внутренних переводов между счетами. */
@@ -884,7 +890,7 @@ function buildYearTransactions() {
         mcc: null,
         amountUzs: depositTopupAmountUzs,
         merchant: 'Вклад 12%',
-        category: 'internal',
+        category: 'deposit_account_fill',
         description: 'Пополнение вклада с основной карты',
       },
       {
@@ -900,38 +906,33 @@ function buildYearTransactions() {
         category: 'internal',
         description: 'Пополнение с основной карты',
       },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 23, 18, 30),
+        userId: 'user_1',
+        accountId: 'acc_tbc_deposit',
+        kind: 'transfer_internal',
+        direction: 'out',
+        mcc: null,
+        amountUzs: depositWithdrawalAmountUzs,
+        merchant: 'Вклад 12%',
+        category: 'internal',
+        description: 'Вывод на основную карту',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 23, 18, 31),
+        userId: 'user_1',
+        accountId: MAIN_SPENDING_ACCOUNT_ID,
+        kind: 'transfer_internal',
+        direction: 'in',
+        mcc: null,
+        amountUzs: depositWithdrawalAmountUzs,
+        merchant: 'Вклад 12%',
+        category: 'deposit_account_payout',
+        description: 'Зачисление с вклада',
+      },
     )
-
-    if (monthIndex % 3 === 2) {
-      transactions.push(
-        {
-          id: nextTxId(),
-          timestamp: toTimestamp(year, month, 23, 18, 30),
-          userId: 'user_1',
-          accountId: 'acc_tbc_deposit',
-          kind: 'transfer_internal',
-          direction: 'out',
-          mcc: null,
-          amountUzs: depositWithdrawalAmountUzs,
-          merchant: 'Вклад 12%',
-          category: 'internal',
-          description: 'Вывод на основную карту',
-        },
-        {
-          id: nextTxId(),
-          timestamp: toTimestamp(year, month, 23, 18, 31),
-          userId: 'user_1',
-          accountId: 'acc_tbc_main',
-          kind: 'transfer_internal',
-          direction: 'in',
-          mcc: null,
-          amountUzs: depositWithdrawalAmountUzs,
-          merchant: 'Вклад 12%',
-          category: 'internal',
-          description: 'Зачисление с вклада',
-        },
-      )
-    }
 
     PURCHASE_TEMPLATES.forEach((template) => {
       if (template.everyNMonths && monthIndex % template.everyNMonths !== 0) {
@@ -1435,6 +1436,10 @@ export const CATEGORIES = {
   /** Та же смысловая группа, что и transfer; ключ сохранён для операций с category из API. */
   transfer_external: { label: 'Переводы', emoji: '💸', color: '#38bdf8' },
   deposit: { label: 'Вклад', emoji: '🏦', color: '#a78bfa' },
+  /** Перевод на вклад со своей карты — в затратах как отдельная статья. */
+  deposit_account_fill: { label: 'Пополнение вклада', emoji: '🏦', color: '#8b5cf6' },
+  /** Возврат со вклада на карту — в поступлениях как дополнительный доход. */
+  deposit_account_payout: { label: 'Снятие со вклада', emoji: '💵', color: '#34d399' },
   currency_purchase: { label: 'Покупка валюты', emoji: '💱', color: '#eab308' },
   investments: { label: 'Инвестиции', emoji: '📈', color: '#10b981' },
   goal_topup: { label: 'Накопительная цель', emoji: '🎯', color: '#f97316' },

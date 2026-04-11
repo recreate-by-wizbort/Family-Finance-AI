@@ -10,7 +10,7 @@ import {
   PRIMARY_BANK_RECREATE,
   TRANSACTIONS,
 } from '../mockData.js'
-import { getMonthTransactions, getPaymentCardsTotalUzs } from '../utils.js'
+import { getPaymentCardsTotalUzs } from '../utils.js'
 import { isSessionUnlocked } from '../utils/sessionLock.js'
 
 function toMonthLabel(monthKey) {
@@ -20,9 +20,80 @@ function toMonthLabel(monthKey) {
   return monthLabel[0].toUpperCase() + monthLabel.slice(1)
 }
 
-function toMonthDate(monthKey) {
-  const [year, month] = monthKey.split('-').map(Number)
-  return new Date(year, month - 1, 1)
+const PERIOD_FILTER_OPTIONS = [
+  { id: 'week', label: 'Нед' },
+  { id: 'month', label: 'Мес' },
+  { id: 'year', label: 'Год' },
+]
+
+function toIsoWeekInfo(date) {
+  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const day = utcDate.getUTCDay() || 7
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day)
+  const isoYear = utcDate.getUTCFullYear()
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1))
+  const week = Math.ceil(((utcDate - yearStart) / 86400000 + 1) / 7)
+  return { isoYear, week }
+}
+
+function getPeriodKeyFromTimestamp(timestamp, periodMode) {
+  const date = new Date(timestamp)
+
+  if (periodMode === 'year') {
+    return String(date.getFullYear())
+  }
+
+  if (periodMode === 'week') {
+    const { isoYear, week } = toIsoWeekInfo(date)
+    return `${isoYear}-W${String(week).padStart(2, '0')}`
+  }
+
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${date.getFullYear()}-${month}`
+}
+
+function getIsoWeekStartDate(isoYear, week) {
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4))
+  const jan4Day = jan4.getUTCDay() || 7
+  const week1Monday = new Date(jan4)
+  week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1)
+  const result = new Date(week1Monday)
+  result.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7)
+  return result
+}
+
+function getPeriodLabel(periodKey, periodMode) {
+  if (periodMode === 'year') {
+    return periodKey
+  }
+
+  if (periodMode === 'week') {
+    const [yearPart, weekPartRaw] = periodKey.split('-W')
+    const isoYear = Number(yearPart)
+    const week = Number(weekPartRaw)
+    const startUtc = getIsoWeekStartDate(isoYear, week)
+    const endUtc = new Date(startUtc)
+    endUtc.setUTCDate(startUtc.getUTCDate() + 6)
+    const startLabel = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(startUtc)
+    const endLabel = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(endUtc)
+    return `${startLabel} - ${endLabel}`
+  }
+
+  return toMonthLabel(periodKey)
+}
+
+function groupTransactionsByPeriod(transactions, periodMode) {
+  const groups = new Map()
+  for (const tx of transactions || []) {
+    const key = getPeriodKeyFromTimestamp(tx.timestamp, periodMode)
+    const rows = groups.get(key)
+    if (rows) {
+      rows.push(tx)
+    } else {
+      groups.set(key, [tx])
+    }
+  }
+  return groups
 }
 
 function roundPercent(value) {
@@ -89,11 +160,13 @@ const CATEGORY_ICON_MAP = {
   transfer_external: 'credit_card',
   goal_topup: 'savings',
   deposit: 'account_balance',
+  deposit_account_fill: 'savings',
+  deposit_account_payout: 'account_balance_wallet',
   currency_purchase: 'currency_exchange',
   investments: 'trending_up',
   /** Микрозайм: «проценты» / краткосрочный заём (Material Symbols). */
   microloan: 'percent',
-  income: 'savings',
+  income: 'trending_up',
   other: 'more_horiz',
 }
 
@@ -112,17 +185,17 @@ const ICON_BADGE_DIAMETER = MAIN_RING_STROKE_WIDTH
 const ICON_BADGE_GLYPH = Math.min(ICON_GLYPH_SIZE, Math.round(ICON_BADGE_DIAMETER * 0.56))
 /** Доля пути сегмента (от старта к концу): значок у конца дуги на той же орбите, чуть до стыка со следующим. */
 const ICON_ON_SEGMENT_FRACTION = 1
-const PERCENT_LABEL_RADIUS = 144
+const PERCENT_LABEL_RADIUS = MAIN_RING_RADIUS + 42
 const PERCENT_LABEL_BOX_WIDTH = 66
 /** Нулевые зазоры между дугами — кольцо замыкается без просветов. */
 const RING_BOUNDARY_GAP_PERCENT = 0
 const RING_SEAM_GAP_PERCENT = 0
 /** Минимальная доля круга для отрисовки сегмента (реальные проценты в подписи не меняются). */
-const MIN_RING_VISUAL_PERCENT = 6.5
+const MIN_RING_VISUAL_PERCENT = 13
 const RING_DRAW_CLOCKWISE = true
 const DONUT_HOLE_SIZE = 164
-const SIDE_PREVIEW_SIZE = 204
-const SIDE_PREVIEW_OFFSET = -153
+const SIDE_PREVIEW_SIZE = 250
+const SIDE_PREVIEW_OFFSET = -210
 const SIDE_RING_MASK = 'radial-gradient(circle, transparent 0 73px, #000 74px 101px, transparent 102px)'
 const MONTH_SWITCH_DURATION_MS = 150
 
@@ -180,6 +253,9 @@ function filterMonitoringExpenseTransactions(accountFilterId, transferExclusionM
   const accountIds = resolveMonitoringAccountIds(accountFilterId)
 
   return TRANSACTIONS.filter((transaction) => {
+    if (transaction.userId !== MONITORING_OWNER_ID) {
+      return false
+    }
     const purchaseOrSub = transaction.kind === 'purchase' || transaction.kind === 'subscription'
     const savingsOrInvestOut =
       transaction.direction === 'out' &&
@@ -202,14 +278,18 @@ function filterMonitoringExpenseTransactions(accountFilterId, transferExclusionM
     }
 
     if (transferOut) {
-      if (transferExclusionMode === 'all') {
-        return false
-      }
-      if (transferExclusionMode === 'household' && transferSelfOrFamily) {
-        return false
-      }
-      if (transferExclusionMode === 'others' && transferToOtherPeople) {
-        return false
+      const isDepositAccountFillOut =
+        transaction.kind === 'transfer_internal' && transaction.category === 'deposit_account_fill'
+      if (!isDepositAccountFillOut) {
+        if (transferExclusionMode === 'all') {
+          return false
+        }
+        if (transferExclusionMode === 'household' && transferSelfOrFamily) {
+          return false
+        }
+        if (transferExclusionMode === 'others' && transferToOtherPeople) {
+          return false
+        }
       }
     }
 
@@ -227,6 +307,60 @@ function filterMonitoringAllTransactions(accountFilterId) {
   const accountIds = resolveMonitoringAccountIds(accountFilterId)
 
   return TRANSACTIONS.filter((transaction) => {
+    if (transaction.userId !== MONITORING_OWNER_ID) {
+      return false
+    }
+    if (accountIds == null) {
+      return true
+    }
+    if (accountIds.length === 0) {
+      return false
+    }
+    return accountIds.includes(transaction.accountId)
+  })
+}
+
+/**
+ * Входящие для аналитики поступлений: те же правила скрытия переводов, что и для расходов
+ * (дом / чужие / все), плюс только транзакции владельца и выбранных счетов.
+ */
+function filterMonitoringIncomeTransactions(accountFilterId, transferExclusionMode) {
+  const accountIds = resolveMonitoringAccountIds(accountFilterId)
+
+  return TRANSACTIONS.filter((transaction) => {
+    if (transaction.userId !== MONITORING_OWNER_ID) {
+      return false
+    }
+    if (transaction.direction !== 'in') {
+      return false
+    }
+
+    const transferIn = String(transaction.kind || '').startsWith('transfer_')
+    const transferSelfOrFamilyIn =
+      transferIn &&
+      (transaction.kind === 'transfer_internal' ||
+        transaction.kind === 'transfer_family' ||
+        transaction.kind === 'transfer_external_card' ||
+        transaction.category === 'internal' ||
+        transaction.category === 'family')
+    const transferToOtherPeopleIn = transferIn && !transferSelfOrFamilyIn
+
+    if (transferIn) {
+      const isDepositAccountPayoutIn =
+        transaction.kind === 'transfer_internal' && transaction.category === 'deposit_account_payout'
+      if (!isDepositAccountPayoutIn) {
+        if (transferExclusionMode === 'all') {
+          return false
+        }
+        if (transferExclusionMode === 'household' && transferSelfOrFamilyIn) {
+          return false
+        }
+        if (transferExclusionMode === 'others' && transferToOtherPeopleIn) {
+          return false
+        }
+      }
+    }
+
     if (accountIds == null) {
       return true
     }
@@ -436,8 +570,6 @@ function buildRingMetricsFromSegments(segments, isUnlocked) {
 
     const labelRadius = PERCENT_LABEL_RADIUS
     const iconRadius = MAIN_RING_RADIUS
-    const labelPoint = pointOnCircle(center, center, labelRadius, centerAngleDeg)
-
     const startAngleDeg = toRingAngle(arcStart, RING_DRAW_CLOCKWISE)
     const endAngleDeg = toRingAngle(arcEnd, RING_DRAW_CLOCKWISE)
     const arcSweepDeg = ((endAngleDeg - startAngleDeg) % 360 + 360) % 360
@@ -455,12 +587,13 @@ function buildRingMetricsFromSegments(segments, isUnlocked) {
       startDeg: startAngleDeg,
       endDeg: endAngleDeg,
       centerAngleDeg,
+      labelAngleDeg: iconAngleDeg,
       iconAngleDeg,
       arcSweepDeg,
       arcPath: describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg, RING_DRAW_CLOCKWISE),
-      labelX: labelPoint.x,
-      labelY: labelPoint.y,
-      adjustedLabelY: labelPoint.y,
+      labelX: center,
+      labelY: center,
+      adjustedLabelY: center,
       iconX: iconPoint.x,
       iconY: iconPoint.y,
       showPercent: true,
@@ -468,33 +601,45 @@ function buildRingMetricsFromSegments(segments, isUnlocked) {
     }
   })
 
-  const MIN_LABEL_GAP = 22
-  const rightGroup = rawMetrics.filter((m) => m.labelX >= center)
-  const leftGroup = rawMetrics.filter((m) => m.labelX < center)
+  if (rawMetrics.length > 0) {
+    const normalizeAngle = (angle) => ((angle % 360) + 360) % 360
+    const shortestAngleDiff = (from, to) => {
+      const normalized = ((to - from + 540) % 360) - 180
+      return normalized
+    }
 
-  function spreadLabels(group) {
-    if (group.length <= 1) return
-    group.sort((a, b) => a.adjustedLabelY - b.adjustedLabelY)
-    for (let pass = 0; pass < 12; pass++) {
-      let stable = true
-      for (let i = 1; i < group.length; i++) {
-        const gap = group[i].adjustedLabelY - group[i - 1].adjustedLabelY
-        if (gap < MIN_LABEL_GAP) {
-          const push = (MIN_LABEL_GAP - gap) / 2
-          group[i - 1].adjustedLabelY -= push
-          group[i].adjustedLabelY += push
-          stable = false
+    const metricsByAngle = [...rawMetrics].sort((a, b) => a.labelAngleDeg - b.labelAngleDeg)
+    const minArcGapPx = 18
+    const minGapDeg = (minArcGapPx / (2 * Math.PI * PERCENT_LABEL_RADIUS)) * 360
+
+    for (let pass = 0; pass < 18; pass++) {
+      for (let i = 0; i < metricsByAngle.length; i++) {
+        const current = metricsByAngle[i]
+        const next = metricsByAngle[(i + 1) % metricsByAngle.length]
+        const delta = (next.labelAngleDeg - current.labelAngleDeg + 360) % 360
+        if (delta < minGapDeg) {
+          const push = (minGapDeg - delta) / 2
+          current.labelAngleDeg = normalizeAngle(current.labelAngleDeg - push)
+          next.labelAngleDeg = normalizeAngle(next.labelAngleDeg + push)
         }
       }
-      if (stable) break
-    }
-    group.forEach((m) => {
-      m.adjustedLabelY = Math.max(8, Math.min(chartSize - 8, m.adjustedLabelY))
-    })
-  }
 
-  spreadLabels(rightGroup)
-  spreadLabels(leftGroup)
+      for (const metric of metricsByAngle) {
+        metric.labelAngleDeg = normalizeAngle(
+          metric.labelAngleDeg + shortestAngleDiff(metric.labelAngleDeg, metric.iconAngleDeg) * 0.2,
+        )
+      }
+
+      metricsByAngle.sort((a, b) => a.labelAngleDeg - b.labelAngleDeg)
+    }
+
+    for (const metric of rawMetrics) {
+      const labelPoint = pointOnCircle(center, center, PERCENT_LABEL_RADIUS, metric.labelAngleDeg)
+      metric.labelX = labelPoint.x
+      metric.labelY = labelPoint.y
+      metric.adjustedLabelY = labelPoint.y
+    }
+  }
 
   return rawMetrics
 }
@@ -514,6 +659,7 @@ export default function CostPage({ mode = 'debit' }) {
    * 'all' — без всех переводов (только цели/вклад/валюта/инвестиции из «не покупок»).
    */
   const [transferExclusionMode, setTransferExclusionMode] = useState('household')
+  const [periodMode, setPeriodMode] = useState('month')
   const [accountFilterMenuOpen, setAccountFilterMenuOpen] = useState(false)
   const [transferFilterMenuOpen, setTransferFilterMenuOpen] = useState(false)
   const accountFilterDropdownRef = useRef(null)
@@ -558,33 +704,60 @@ export default function CostPage({ mode = 'debit' }) {
     [accountFilterId, transferExclusionMode],
   )
 
+  const incomeTransactions = useMemo(
+    () => filterMonitoringIncomeTransactions(accountFilterId, transferExclusionMode),
+    [accountFilterId, transferExclusionMode],
+  )
+
   const allMonitoringTransactions = useMemo(
     () => filterMonitoringAllTransactions(accountFilterId),
     [accountFilterId],
   )
 
-  const monthKeys = useMemo(() => {
+  const [selectedPeriodKey, setSelectedPeriodKey] = useState(null)
+
+  const groupedAllMonitoringByPeriod = useMemo(
+    () => groupTransactionsByPeriod(allMonitoringTransactions, periodMode),
+    [allMonitoringTransactions, periodMode],
+  )
+  const groupedExpenseByPeriod = useMemo(
+    () => groupTransactionsByPeriod(expenseTransactions, periodMode),
+    [expenseTransactions, periodMode],
+  )
+  const groupedExpenseNoTransfersByPeriod = useMemo(
+    () => groupTransactionsByPeriod(expenseTransactionsNoTransfers, periodMode),
+    [expenseTransactionsNoTransfers, periodMode],
+  )
+  const groupedIncomeByPeriod = useMemo(
+    () => groupTransactionsByPeriod(incomeTransactions, periodMode),
+    [incomeTransactions, periodMode],
+  )
+
+  const periodKeys = useMemo(() => {
     const unique = new Set([
-      ...allMonitoringTransactions.map((t) => t.timestamp.slice(0, 7)),
-      ...expenseTransactions.map((t) => t.timestamp.slice(0, 7)),
-      ...expenseTransactionsNoTransfers.map((t) => t.timestamp.slice(0, 7)),
+      ...groupedAllMonitoringByPeriod.keys(),
+      ...groupedExpenseByPeriod.keys(),
+      ...groupedExpenseNoTransfersByPeriod.keys(),
+      ...groupedIncomeByPeriod.keys(),
     ])
     return Array.from(unique).sort()
-  }, [allMonitoringTransactions, expenseTransactions, expenseTransactionsNoTransfers])
+  }, [
+    groupedAllMonitoringByPeriod,
+    groupedExpenseByPeriod,
+    groupedExpenseNoTransfersByPeriod,
+    groupedIncomeByPeriod,
+  ])
 
-  /** null = последний доступный месяц в текущем наборе monthKeys */
-  const [selectedMonthKey, setSelectedMonthKey] = useState(null)
-
-  const selectedMonthIndex = useMemo(() => {
-    if (monthKeys.length === 0) {
+  const selectedPeriodIndex = useMemo(() => {
+    if (periodKeys.length === 0) {
       return 0
     }
-    if (selectedMonthKey == null) {
-      return monthKeys.length - 1
+    if (selectedPeriodKey == null) {
+      return periodKeys.length - 1
     }
-    const found = monthKeys.indexOf(selectedMonthKey)
-    return found >= 0 ? found : monthKeys.length - 1
-  }, [monthKeys, selectedMonthKey])
+    const found = periodKeys.indexOf(selectedPeriodKey)
+    return found >= 0 ? found : periodKeys.length - 1
+  }, [periodKeys, selectedPeriodKey])
 
   const useSwipeNavigation = useMemo(() => isMobileDevice(), [])
   const transitionFrameRef = useRef(null)
@@ -603,16 +776,16 @@ export default function CostPage({ mode = 'debit' }) {
     }
   }, [])
 
-  const monthSnapshots = useMemo(() => {
-    return monthKeys.map((monthKey) => {
-      const monthDate = toMonthDate(monthKey)
-      const transactions = getMonthTransactions(allMonitoringTransactions, monthDate)
-      const expenseTransactionsForMonth = getMonthTransactions(expenseTransactions, monthDate)
-      const transactionsNoTf = getMonthTransactions(expenseTransactionsNoTransfers, monthDate)
+  const periodSnapshots = useMemo(() => {
+    return periodKeys.map((periodKey) => {
+      const transactions = groupedAllMonitoringByPeriod.get(periodKey) ?? []
+      const incomeTransactionsForPeriod = groupedIncomeByPeriod.get(periodKey) ?? []
+      const expenseTransactionsForPeriod = groupedExpenseByPeriod.get(periodKey) ?? []
+      const transactionsNoTf = groupedExpenseNoTransfersByPeriod.get(periodKey) ?? []
 
-      const totalsCurrent = aggregateMonitoringOutflow(expenseTransactionsForMonth)
+      const totalsCurrent = aggregateMonitoringOutflow(expenseTransactionsForPeriod)
       const totalsNoTf = aggregateMonitoringOutflow(transactionsNoTf)
-      const totalsCredit = aggregateMonitoringInflow(transactions)
+      const totalsCredit = aggregateMonitoringInflow(incomeTransactionsForPeriod)
       const cardBalance = getPaymentCardsTotalUzs(
         MONITORING_OWNER_ID,
         ACCOUNTS,
@@ -647,9 +820,9 @@ export default function CostPage({ mode = 'debit' }) {
       const monitoringRows = buildMonitoringSegments(
         {
           ...Object.fromEntries(
-            Array.from(new Set([...Object.keys(totalsCurrent), ...Object.keys(totalsCredit)])).map(
-              (key) => [key, (totalsCurrent[key] || 0) + (totalsCredit[key] || 0)],
-            ),
+            Array.from(new Set([...Object.keys(totalsCurrent), ...Object.keys(totalsCredit)]))
+              .filter((key) => key !== 'income')
+              .map((key) => [key, (totalsCurrent[key] || 0) + (totalsCredit[key] || 0)]),
           ),
         },
         cardBalance,
@@ -662,10 +835,11 @@ export default function CostPage({ mode = 'debit' }) {
       const monitoringMetrics = buildRingMetricsFromSegments(monitoringRows.segments, isUnlocked)
 
       return {
-        key: monthKey,
-        label: toMonthLabel(monthKey),
-        date: monthDate,
+        key: periodKey,
+        label: getPeriodLabel(periodKey, periodMode),
         transactions,
+        expenseTransactions: expenseTransactionsForPeriod,
+        incomeTransactions: incomeTransactionsForPeriod,
         total,
         segments,
         debitTotal: total,
@@ -680,19 +854,22 @@ export default function CostPage({ mode = 'debit' }) {
       }
     })
   }, [
-    monthKeys,
-    allMonitoringTransactions,
-    expenseTransactions,
-    expenseTransactionsNoTransfers,
+    periodKeys,
+    groupedAllMonitoringByPeriod,
+    groupedExpenseByPeriod,
+    groupedExpenseNoTransfersByPeriod,
+    groupedIncomeByPeriod,
+    periodMode,
     isUnlocked,
   ])
 
   const selectedSnapshot =
-    monthSnapshots[selectedMonthIndex] ?? {
+    periodSnapshots[selectedPeriodIndex] ?? {
       key: '',
-      label: 'Месяц',
-      date: new Date(),
+      label: 'Период',
       transactions: [],
+      expenseTransactions: [],
+      incomeTransactions: [],
       total: 0,
       segments: [],
       debitTotal: 0,
@@ -706,20 +883,24 @@ export default function CostPage({ mode = 'debit' }) {
       metrics: [],
     }
 
-  const previousSnapshot = monthSnapshots[selectedMonthIndex - 1] ?? null
+  const previousSnapshot = periodSnapshots[selectedPeriodIndex - 1] ?? null
 
-  const currentMonthTransactions = selectedSnapshot.transactions
+  const currentPeriodTransactions = isMonitoringMode
+    ? selectedSnapshot.transactions
+    : flowMode === 'debit'
+      ? selectedSnapshot.expenseTransactions
+      : selectedSnapshot.incomeTransactions
   const currentTotal = isMonitoringMode
-    ? selectedSnapshot.debitTotal - selectedSnapshot.creditTotal
+    ? selectedSnapshot.creditTotal - selectedSnapshot.debitTotal
     : flowMode === 'credit'
       ? selectedSnapshot.creditTotal
       : selectedSnapshot.debitTotal
   const previousTotal = isMonitoringMode
-    ? (previousSnapshot?.debitTotal ?? 0) - (previousSnapshot?.creditTotal ?? 0)
+    ? (previousSnapshot?.creditTotal ?? 0) - (previousSnapshot?.debitTotal ?? 0)
     : flowMode === 'credit'
       ? (previousSnapshot?.creditTotal ?? 0)
       : (previousSnapshot?.debitTotal ?? 0)
-  const monthChange =
+  const periodChange =
     previousTotal !== 0 ? roundPercent(((currentTotal - previousTotal) / Math.abs(previousTotal)) * 100) : 0
 
   const chartSegments = isMonitoringMode
@@ -729,25 +910,25 @@ export default function CostPage({ mode = 'debit' }) {
       : selectedSnapshot.debitSegments
 
   const isTransitioning = ringTransition != null
-  const hasPrevMonth = selectedMonthIndex > 0
-  const hasNextMonth = selectedMonthIndex < monthKeys.length - 1
-  const canGoPrev = !isTransitioning && hasPrevMonth
-  const canGoNext = !isTransitioning && hasNextMonth
+  const hasPrevPeriod = selectedPeriodIndex > 0
+  const hasNextPeriod = selectedPeriodIndex < periodKeys.length - 1
+  const canGoPrev = !isTransitioning && hasPrevPeriod
+  const canGoNext = !isTransitioning && hasNextPeriod
   const showDesktopArrows = !useSwipeNavigation
 
-  const startMonthTransition = (targetIndex) => {
+  const startPeriodTransition = (targetIndex) => {
     if (
       ringTransition != null ||
       targetIndex < 0 ||
-      targetIndex >= monthKeys.length ||
-      targetIndex === selectedMonthIndex
+      targetIndex >= periodKeys.length ||
+      targetIndex === selectedPeriodIndex
     ) {
       return
     }
 
-    const direction = targetIndex > selectedMonthIndex ? -1 : 1
+    const direction = targetIndex > selectedPeriodIndex ? -1 : 1
     setRingTransition({
-      fromIndex: selectedMonthIndex,
+      fromIndex: selectedPeriodIndex,
       toIndex: targetIndex,
       direction,
       active: false,
@@ -768,26 +949,26 @@ export default function CostPage({ mode = 'debit' }) {
     }
 
     transitionTimeoutRef.current = setTimeout(() => {
-      setSelectedMonthKey(monthKeys[targetIndex] ?? null)
+      setSelectedPeriodKey(periodKeys[targetIndex] ?? null)
       setRingTransition(null)
       transitionTimeoutRef.current = null
     }, MONTH_SWITCH_DURATION_MS)
   }
 
-  const goPrevMonth = () => {
+  const goPrevPeriod = () => {
     if (!canGoPrev) {
       return
     }
 
-    startMonthTransition(selectedMonthIndex - 1)
+    startPeriodTransition(selectedPeriodIndex - 1)
   }
 
-  const goNextMonth = () => {
+  const goNextPeriod = () => {
     if (!canGoNext) {
       return
     }
 
-    startMonthTransition(selectedMonthIndex + 1)
+    startPeriodTransition(selectedPeriodIndex + 1)
   }
 
   const swipeStartRef = useRef({ x: 0, y: 0, active: false })
@@ -834,18 +1015,18 @@ export default function CostPage({ mode = 'debit' }) {
     }
 
     if (deltaX < 0 && canGoNext) {
-      goNextMonth()
+      goNextPeriod()
       return
     }
 
     if (deltaX > 0 && canGoPrev) {
-      goPrevMonth()
+      goPrevPeriod()
     }
   }
 
-  const monthLabel = selectedSnapshot.label
+  const periodLabel = selectedSnapshot.label
   const amountValue = isUnlocked ? String(Math.round(currentTotal)) : '•••••••'
-  const changeValue = isUnlocked ? `${monthChange >= 0 ? '+' : ''}${monthChange}%` : '•••%'
+  const changeValue = isUnlocked ? `${periodChange >= 0 ? '+' : ''}${periodChange}%` : '•••%'
   const isPositiveChange = !changeValue.startsWith('-')
   const changeBadgeKind = !isUnlocked
     ? 'masked'
@@ -863,7 +1044,7 @@ export default function CostPage({ mode = 'debit' }) {
 
   const visibleSegments = isUnlocked ? chartSegments : []
   const recentOperations = isUnlocked
-    ? [...currentMonthTransactions]
+    ? [...currentPeriodTransactions]
         .filter((transaction) =>
           isMonitoringMode
             ? transaction.direction === 'out' || transaction.direction === 'in'
@@ -891,10 +1072,10 @@ export default function CostPage({ mode = 'debit' }) {
   )
 
   const transitionFromSnapshot = ringTransition
-    ? monthSnapshots[ringTransition.fromIndex] ?? selectedSnapshot
+    ? periodSnapshots[ringTransition.fromIndex] ?? selectedSnapshot
     : null
   const transitionToSnapshot = ringTransition
-    ? monthSnapshots[ringTransition.toIndex] ?? selectedSnapshot
+    ? periodSnapshots[ringTransition.toIndex] ?? selectedSnapshot
     : null
 
   const ringMetricsForSnapshot = (snap) => {
@@ -917,7 +1098,7 @@ export default function CostPage({ mode = 'debit' }) {
 
   const renderRingLayer = (snapshot, layerKey, layerStyle, layerMetrics) => {
     const layerMetricsResolved = layerMetrics ?? []
-    const layerMonthLabel = snapshot?.label ?? 'Месяц'
+    const layerMonthLabel = snapshot?.label ?? 'Период'
     const arcRenderMetrics = [...layerMetricsResolved].sort((a, b) => a.startDeg - b.startDeg)
     const maxPercentValue =
       layerMetricsResolved.reduce((max, segment) => Math.max(max, segment.percent), 0) || 1
@@ -1205,7 +1386,7 @@ export default function CostPage({ mode = 'debit' }) {
                             onClick={() => {
                               setAccountFilterId(option.id)
                               setAccountFilterMenuOpen(false)
-                              setSelectedMonthKey(null)
+                              setSelectedPeriodKey(null)
                             }}
                           >
                             {selected ? (
@@ -1274,7 +1455,7 @@ export default function CostPage({ mode = 'debit' }) {
                       onClick={() => {
                         setTransferExclusionMode(null)
                         setTransferFilterMenuOpen(false)
-                        setSelectedMonthKey(null)
+                        setSelectedPeriodKey(null)
                       }}
                     >
                       <span className="material-symbols-outlined text-[1.125rem]">close</span>
@@ -1300,7 +1481,7 @@ export default function CostPage({ mode = 'debit' }) {
                         onClick={() => {
                           setTransferExclusionMode('household')
                           setTransferFilterMenuOpen(false)
-                          setSelectedMonthKey(null)
+                          setSelectedPeriodKey(null)
                         }}
                       >
                         {transferExclusionMode === 'household' ? (
@@ -1333,7 +1514,7 @@ export default function CostPage({ mode = 'debit' }) {
                         onClick={() => {
                           setTransferExclusionMode('others')
                           setTransferFilterMenuOpen(false)
-                          setSelectedMonthKey(null)
+                          setSelectedPeriodKey(null)
                         }}
                       >
                         {transferExclusionMode === 'others' ? (
@@ -1366,7 +1547,7 @@ export default function CostPage({ mode = 'debit' }) {
                         onClick={() => {
                           setTransferExclusionMode('all')
                           setTransferFilterMenuOpen(false)
-                          setSelectedMonthKey(null)
+                          setSelectedPeriodKey(null)
                         }}
                       >
                         {transferExclusionMode === 'all' ? (
@@ -1401,28 +1582,28 @@ export default function CostPage({ mode = 'debit' }) {
             {showDesktopArrows ? (
               <>
                 <button
-                  aria-label="Предыдущий месяц"
+                  aria-label="Предыдущий период"
                   className={`absolute left-0 top-[38%] z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border transition-all md:-translate-x-1/2 ${
                     canGoPrev
                       ? 'border-[#4cd6fb]/25 bg-[#112036] text-[#4cd6fb] hover:bg-[#1c2a41] active:scale-95'
                       : 'cursor-not-allowed border-[#27354c] bg-[#112036]/40 text-[#546074]'
                   }`}
                   disabled={!canGoPrev}
-                  onClick={goPrevMonth}
+                  onClick={goPrevPeriod}
                   type="button"
                 >
                   <span className="material-symbols-outlined">chevron_left</span>
                 </button>
 
                 <button
-                  aria-label="Следующий месяц"
+                  aria-label="Следующий период"
                   className={`absolute right-0 top-[38%] z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border transition-all md:translate-x-1/2 ${
                     canGoNext
                       ? 'border-[#4cd6fb]/25 bg-[#112036] text-[#4cd6fb] hover:bg-[#1c2a41] active:scale-95'
                       : 'cursor-not-allowed border-[#27354c] bg-[#112036]/40 text-[#546074]'
                   }`}
                   disabled={!canGoNext}
-                  onClick={goNextMonth}
+                  onClick={goNextPeriod}
                   type="button"
                 >
                   <span className="material-symbols-outlined">chevron_right</span>
@@ -1430,7 +1611,7 @@ export default function CostPage({ mode = 'debit' }) {
               </>
               ) : null}
 
-              {hasPrevMonth ? (
+              {hasPrevPeriod ? (
                 <div
                   className="pointer-events-none absolute top-1/2 z-0"
                   style={{
@@ -1452,7 +1633,7 @@ export default function CostPage({ mode = 'debit' }) {
                 </div>
               ) : null}
 
-              {hasNextMonth ? (
+              {hasNextPeriod ? (
                 <div
                   className="pointer-events-none absolute top-1/2 z-0"
                   style={{
@@ -1559,15 +1740,44 @@ export default function CostPage({ mode = 'debit' }) {
               </p>
             </div>
 
+            <div className="mb-3 flex justify-center">
+              <div className="inline-grid grid-cols-3 gap-1 rounded-full bg-[#1b2433] p-1">
+                {PERIOD_FILTER_OPTIONS.map((option) => {
+                  const isActive = option.id === periodMode
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`rounded-full px-9 py-1 text-base font-bold transition ${
+                        isActive
+                          ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+                          : 'text-[#bcc9ce] hover:text-white'
+                      }`}
+                      onClick={() => {
+                        if (periodMode === option.id) {
+                          return
+                        }
+                        setPeriodMode(option.id)
+                        setSelectedPeriodKey(null)
+                        setRingTransition(null)
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             {isMonitoringMode ? (
               <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
                 <span className="rounded-full border border-[#4cd6fb]/30 bg-[#4cd6fb]/10 px-3 py-1 text-xs font-semibold text-[#8de4ff]">
-                  Дебит:{' '}
-                  <UzsAmount as="span" compact compactFrom={1_000_000} value={String(Math.round(selectedSnapshot.debitTotal))} />
+                  Поступления:{' '}
+                  <UzsAmount as="span" compact compactFrom={1_000_000} value={String(Math.round(selectedSnapshot.creditTotal))} />
                 </span>
                 <span className="rounded-full border border-[#58d6f1]/30 bg-[#58d6f1]/10 px-3 py-1 text-xs font-semibold text-[#9cecff]">
-                  Кредит:{' '}
-                  <UzsAmount as="span" compact compactFrom={1_000_000} value={String(Math.round(selectedSnapshot.creditTotal))} />
+                  Затраты:{' '}
+                  <UzsAmount as="span" compact compactFrom={1_000_000} value={String(Math.round(selectedSnapshot.debitTotal))} />
                 </span>
               </div>
             ) : null}
@@ -1652,7 +1862,7 @@ export default function CostPage({ mode = 'debit' }) {
                   ? 'История трат'
                   : 'История пополнений'}
             </h2>
-            <span className="text-xs uppercase tracking-[0.14em] text-[#869398]">{monthLabel}</span>
+            <span className="text-xs uppercase tracking-[0.14em] text-[#869398]">{periodLabel}</span>
           </div>
 
           {recentOperations.length > 0 ? (
