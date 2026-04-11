@@ -1,32 +1,14 @@
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY
 const MODEL = 'nvidia/nemotron-3-super-120b-a12b:free'
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions'
-
-const SYSTEM_PROMPT = `Ты — умный финансовый помощник семейного банковского приложения Family Finance AI.
-
-Твоя задача:
-- Анализировать финансовые данные семьи и давать конкретные советы
-- Отвечать кратко и по делу — максимум 3-4 предложения
-- Всегда предлагать одно конкретное действие в конце ответа
-- Использовать цифры из контекста, а не общие слова
-- Писать на русском языке
-- Суммы указывать в формате "X млн сум" или "X тыс. сум"
-
-Чего не делать:
-- Не давай рекламных советов по конкретным продуктам
-- Не обещай доходность
-- Не используй сложные финансовые термины без объяснения
-- Не пиши длинные списки — максимум 3 пункта
-
-Формат ответа:
-1. Краткий анализ (1-2 предложения)
-2. Вывод или рекомендация (1 предложение)
-3. Конкретное действие: [КНОПКА: текст действия]
-
-Пример формата конкретного действия в конце:
-[КНОПКА: Перевести 500 тыс. на вклад]
-[КНОПКА: Поставить лимит на кафе 300 тыс./мес]
-[КНОПКА: Увеличить взнос по цели на 200 тыс.]`
+const MAX_TOKENS = 600
+const TEMPERATURE = 0.6
+const TOP_P = 0.9
+const REASONING_CONFIG = {
+  enabled: true,
+  effort: 'high',
+  exclude: true,
+}
 
 function ensureApiKey() {
   if (!OPENROUTER_API_KEY) {
@@ -52,25 +34,59 @@ async function parseError(response) {
   }
 }
 
-function prepareMessages(userMessage, budgetContext, chatHistory = []) {
+function normalizeTextContent(content) {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((chunk) => (typeof chunk === 'string' ? chunk : chunk?.text || ''))
+      .join('')
+  }
+  return ''
+}
+
+function normalizeChatHistory(chatHistory) {
+  return chatHistory
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
+    .map((m) => ({ role: m.role, content: normalizeTextContent(m.content) }))
+}
+
+function buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory = []) {
+  const contextBlock = [
+    '--- ФИНАНСОВЫЕ ДАННЫЕ ---',
+    budgetContext,
+    '',
+    yearlyContext,
+    '--- КОНЕЦ ДАННЫХ ---',
+  ].join('\n')
+
   return [
-    {
-      role: 'user',
-      content: `Вот текущие финансовые данные семьи:\n\n${budgetContext}`,
-    },
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: contextBlock },
     {
       role: 'assistant',
-      content: 'Понял, я изучил финансовые данные семьи. Готов отвечать на вопросы.',
+      content: 'Понял, я изучил ваши финансовые данные и готов помочь. Задавайте вопросы.',
     },
-    ...chatHistory.slice(-6),
-    { role: 'user', content: userMessage },
+    ...normalizeChatHistory(chatHistory).slice(-6),
+    { role: 'user', content: userQuestion },
   ]
 }
 
-export async function* askAI(userMessage, budgetContext, chatHistory = []) {
-  ensureApiKey()
+function extractTextFromCompletion(payload) {
+  const message = payload?.choices?.[0]?.message?.content
+  return normalizeTextContent(message)
+}
 
-  const messages = prepareMessages(userMessage, budgetContext, chatHistory)
+/**
+ * @param {string} systemPrompt  - полный системный промпт (роль + правила)
+ * @param {string} userQuestion  - чистый вопрос пользователя
+ * @param {string} budgetContext - текстовый блок с финансовыми данными
+ * @param {string} yearlyContext - помесячная динамика за 12 мес.
+ * @param {Array}  chatHistory   - [{role, content}]
+ * @returns {AsyncGenerator<string>} стрим токенов
+ */
+export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory = []) {
+  ensureApiKey()
+  const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
 
   const response = await fetch(API_URL, {
     method: 'POST',
@@ -78,9 +94,10 @@ export async function* askAI(userMessage, budgetContext, chatHistory = []) {
     body: JSON.stringify({
       model: MODEL,
       messages,
-      system: SYSTEM_PROMPT,
-      max_tokens: 400,
-      temperature: 0.7,
+      max_tokens: MAX_TOKENS,
+      temperature: TEMPERATURE,
+      top_p: TOP_P,
+      reasoning: REASONING_CONFIG,
       stream: true,
     }),
   })
@@ -96,12 +113,11 @@ export async function* askAI(userMessage, budgetContext, chatHistory = []) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let yieldedTokens = 0
 
   while (true) {
     const { value, done } = await reader.read()
-    if (done) {
-      break
-    }
+    if (done) break
 
     buffer += decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
@@ -109,54 +125,58 @@ export async function* askAI(userMessage, budgetContext, chatHistory = []) {
 
     for (const rawLine of lines) {
       const line = rawLine.trim()
-      if (!line.startsWith('data:')) {
-        continue
-      }
+      if (!line.startsWith('data:')) continue
 
       const payload = line.replace(/^data:\s*/, '')
-      if (payload === '[DONE]') {
-        return
-      }
+      if (payload === '[DONE]') return
 
       try {
         const json = JSON.parse(payload)
-        const token = json.choices?.[0]?.delta?.content
+        if (json?.error) {
+          throw new Error(json.error?.message || 'Ошибка стрима OpenRouter')
+        }
+        const token = normalizeTextContent(json?.choices?.[0]?.delta?.content)
         if (token) {
+          yieldedTokens += token.length
           yield token
         }
-      } catch {
-        // Skip malformed chunks.
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          // Skip malformed chunks
+          continue
+        }
+        throw err
       }
     }
   }
+
+  if (yieldedTokens === 0) {
+    const fallback = await askAISimple(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
+    if (fallback) yield fallback
+  }
 }
 
-export async function askAISimple(userMessage, budgetContext) {
+export async function askAISimple(systemPrompt, userQuestion, budgetContext, yearlyContext = '', chatHistory = []) {
   ensureApiKey()
+  const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
 
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({
       model: MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: `Данные семейного бюджета:\n${budgetContext}\n\nВопрос: ${userMessage}`,
-        },
-      ],
-      system: SYSTEM_PROMPT,
-      max_tokens: 400,
-      temperature: 0.7,
+      messages,
+      max_tokens: MAX_TOKENS,
+      temperature: TEMPERATURE,
+      top_p: TOP_P,
+      reasoning: REASONING_CONFIG,
     }),
   })
 
-  if (!response.ok) {
-    throw new Error(await parseError(response))
-  }
+  if (!response.ok) throw new Error(await parseError(response))
 
   const data = await response.json()
-  return data.choices?.[0]?.message?.content || 'Не удалось получить ответ'
+  return extractTextFromCompletion(data) || 'Не удалось получить ответ'
 }
 
 export const SUGGESTED_QUESTIONS = [
@@ -168,4 +188,4 @@ export const SUGGESTED_QUESTIONS = [
   { id: 6, text: 'Что будет, если открыть вклад на 6 мес?', emoji: '🏦' },
 ]
 
-export { MODEL, SYSTEM_PROMPT }
+export { MODEL }

@@ -2,8 +2,13 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import AllServicesPage from './pages/AllServicesPage'
 import RequirePinRoute from './components/RequirePinRoute'
 import HomePage from './pages/HomePage'
+import IncomePage from './pages/IncomePage'
 import MobileEntryPage from './pages/MobileEntryPage'
+import CostPage from './pages/CostPage'
+import FamilyGroupPage from './pages/FamilyGroupPage'
+import GoalPage from './pages/GoalPage'
 import MonitoringPage from './pages/MonitoringPage'
+import AdviceAIPage from './pages/AdviceAIPage'
 import NotificationsPage from './pages/NotificationsPage'
 import PayPage from './pages/PayPage'
 import PreviewPage from './pages/PreviewPage'
@@ -44,6 +49,46 @@ function App() {
           element={
             <RequirePinRoute>
               <MonitoringPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/family"
+          element={
+            <RequirePinRoute>
+              <FamilyGroupPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/goal"
+          element={
+            <RequirePinRoute>
+              <GoalPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/cost"
+          element={
+            <RequirePinRoute>
+              <CostPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/income"
+          element={
+            <RequirePinRoute>
+              <IncomePage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/advice-ai"
+          element={
+            <RequirePinRoute>
+              <AdviceAIPage />
             </RequirePinRoute>
           }
         />

@@ -261,7 +261,16 @@ export const FOREIGN_ACCOUNT_MOVEMENTS = {
   ],
 }
 
-export const NON_EXPENSE_KINDS = ['transfer_internal', 'transfer_family', 'goal_topup']
+export const NON_EXPENSE_KINDS = [
+  'transfer_internal',
+  'transfer_family',
+  'goal_topup',
+  'transfer_p2p',
+  'transfer_external_card',
+  'deposit_topup',
+  'currency_purchase',
+  'investment_contribution',
+]
 
 export const FILTER_PERIODS = ['7d', '30d', '90d', '180d', '365d', 'mtd', 'ytd', 'custom']
 
@@ -283,6 +292,10 @@ export const MCC_CATEGORY_RULES = {
   5734: 'subscriptions',
   7372: 'subscriptions',
   7538: 'car',
+  /** Разное: мелкие магазины, нестандартный MCC */
+  5399: 'other',
+  5999: 'other',
+  7299: 'other',
 }
 
 export function resolveCategoryByMcc(mcc, fallbackCategory = 'shopping') {
@@ -614,6 +627,11 @@ const WEEKLY_PURCHASE_TEMPLATES = [
   },
 ]
 
+const MONTHLY_SALARY_UZS = 20_000_000
+const MICROLOAN_ANNUAL_RATE = 0.24
+const MAIN_SPENDING_ACCOUNT_ID = 'acc_tbc_main'
+const EXTRA_SPENDING_PRESSURE_PERIOD_MONTHS = 2
+
 function pad2(value) {
   return String(value).padStart(2, '0')
 }
@@ -632,6 +650,34 @@ function amountWithVariation(baseAmountUzs, monthIndex, seed, minAmountUzs = 100
   return Math.max(minAmountUzs, baseAmountUzs + delta)
 }
 
+function addMonths(year, month, deltaMonths) {
+  const total = year * 12 + (month - 1) + deltaMonths
+  return {
+    year: Math.floor(total / 12),
+    month: (total % 12) + 1,
+  }
+}
+
+/** Дата ближайшей зарплаты (10-е число 09:35) после момента займа. */
+function nextSalaryRepaymentTimestampAfter(timestamp) {
+  const borrowedAt = new Date(timestamp)
+  const year = borrowedAt.getFullYear()
+  const month = borrowedAt.getMonth() + 1
+  const thisMonthSalaryTs = toTimestamp(year, month, 10, 9, 35)
+  if (timestamp < thisMonthSalaryTs) {
+    return thisMonthSalaryTs
+  }
+  const next = addMonths(year, month, 1)
+  return toTimestamp(next.year, next.month, 10, 9, 35)
+}
+
+function diffDaysCeil(fromTimestamp, toTimestampValue) {
+  const from = new Date(fromTimestamp).getTime()
+  const to = new Date(toTimestampValue).getTime()
+  const rawDays = (to - from) / (24 * 60 * 60 * 1000)
+  return Math.max(1, Math.ceil(rawDays))
+}
+
 function buildYearTransactions() {
   let txIndex = 1
 
@@ -642,62 +688,171 @@ function buildYearTransactions() {
   }
 
   const transactions = []
+  let cycleSpendableUzs = MONTHLY_SALARY_UZS
+  /** Активные микрозаймы, которые погашаются в ближайшую зарплату (10-е число). */
+  let pendingMicroloans = []
+
+  const applyMicroloanFlow = (monthTransactions, monthCode) => {
+    const ordered = [...monthTransactions].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    const withMicroloans = []
+
+    ordered.forEach((transaction) => {
+      if (transaction.accountId === MAIN_SPENDING_ACCOUNT_ID) {
+        const amountUzs = Number(transaction.amountUzs) || 0
+
+        const isMicroloanRepaymentPlaceholder =
+          transaction.kind === 'purchase' &&
+          transaction.direction === 'out' &&
+          transaction.category === 'microloan' &&
+          transaction.amountUzs === 0
+        if (isMicroloanRepaymentPlaceholder) {
+          const dueLoans = pendingMicroloans.filter((loan) => loan.repaymentAt <= transaction.timestamp)
+          if (dueLoans.length > 0) {
+            const totalPrincipalUzs = dueLoans.reduce((sum, loan) => sum + loan.principalUzs, 0)
+            const totalInterestUzs = dueLoans.reduce((sum, loan) => {
+              const daysInUse = diffDaysCeil(loan.borrowedAt, transaction.timestamp)
+              return sum + (loan.principalUzs * MICROLOAN_ANNUAL_RATE * daysInUse) / 365
+            }, 0)
+            const repaymentAmountUzs = Math.round((totalPrincipalUzs + totalInterestUzs) * 10) / 10
+            const totalDays = dueLoans.reduce(
+              (sum, loan) => sum + diffDaysCeil(loan.borrowedAt, transaction.timestamp),
+              0
+            )
+            const avgDays = Math.round(totalDays / dueLoans.length)
+
+            withMicroloans.push({
+              ...transaction,
+              amountUzs: repaymentAmountUzs,
+              description: `Погашение микрозайма ${monthCode}: тело ${Math.round(totalPrincipalUzs).toLocaleString('ru-RU')} + проценты ${Math.round(totalInterestUzs * 10) / 10} (24% годовых, ~${avgDays} дн.)`,
+            })
+            cycleSpendableUzs -= repaymentAmountUzs
+            pendingMicroloans = pendingMicroloans.filter((loan) => loan.repaymentAt > transaction.timestamp)
+          }
+          return
+        }
+
+        if (transaction.direction === 'out') {
+          const outAmountUzs = Math.abs(amountUzs)
+          if (cycleSpendableUzs < outAmountUzs) {
+            const deficitUzs = outAmountUzs - cycleSpendableUzs
+            const microloanAmountUzs = Math.round(deficitUzs * 10) / 10
+            const repaymentAt = nextSalaryRepaymentTimestampAfter(transaction.timestamp)
+            withMicroloans.push({
+              id: nextTxId(),
+              timestamp: transaction.timestamp,
+              userId: 'user_1',
+              accountId: MAIN_SPENDING_ACCOUNT_ID,
+              kind: 'income',
+              direction: 'in',
+              mcc: null,
+              amountUzs: microloanAmountUzs,
+              merchant: 'Microfinance 24%',
+              category: 'microloan',
+              description: `Получение микрозайма (${monthCode}) на ${Math.round(microloanAmountUzs).toLocaleString('ru-RU')} до ${repaymentAt.slice(0, 10)}`,
+            })
+            cycleSpendableUzs += microloanAmountUzs
+            pendingMicroloans.push({
+              principalUzs: microloanAmountUzs,
+              borrowedAt: transaction.timestamp,
+              repaymentAt,
+            })
+          }
+          cycleSpendableUzs -= outAmountUzs
+        } else if (transaction.direction === 'in') {
+          const inAmountUzs = Math.abs(amountUzs)
+          const isSalaryTopup =
+            transaction.kind === 'income' && String(transaction.description || '').startsWith('Зарплата ')
+          // Новый зарплатный цикл: считаем, что доступный лимит на месяц снова 20 млн (+ редкие доп. поступления в течение цикла).
+          cycleSpendableUzs = isSalaryTopup ? inAmountUzs : cycleSpendableUzs + inAmountUzs
+        }
+      }
+
+      withMicroloans.push(transaction)
+    })
+
+    return withMicroloans
+  }
 
   YEAR_MONTHS.forEach(({ year, month }, monthIndex) => {
     const monthCode = `${year}-${pad2(month)}`
-
-    let salaryAmountUzs = amountWithVariation(18500000, monthIndex, 90, 17000000)
-    if (month === 12) {
-      salaryAmountUzs += 4000000
-    }
-
-    const ownTransferAmountUzs = Math.round(salaryAmountUzs * (0.52 + (monthIndex % 4) * 0.03))
+    const monthStartIndex = transactions.length
+    const salaryAmountUzs = MONTHLY_SALARY_UZS
     const familyTransferAmountUzs = amountWithVariation(1450000, monthIndex, 91, 1050000)
     const depositTopupAmountUzs = amountWithVariation(820000, monthIndex, 95, 500000)
-    const depositWithdrawalAmountUzs = amountWithVariation(640000, monthIndex, 96, 350000)
+    /** Снятие со вклада всегда меньше пополнения; одна пара операций каждый месяц. */
+    const depositWithdrawalRaw = amountWithVariation(640000, monthIndex, 96, 350000)
+    const depositWithdrawalAmountUzs = Math.min(
+      depositWithdrawalRaw,
+      Math.max(350000, depositTopupAmountUzs - 100_000),
+      depositTopupAmountUzs - 1000,
+    )
     const goalTopupAmountUzs = amountWithVariation(1900000, monthIndex, 92, 1200000)
+    const p2pTransferAmountUzs = amountWithVariation(950000, monthIndex, 97, 400000)
+    /** Отдельное пополнение вклада (категория «Вклад»), помимо внутренних переводов между счетами. */
+    const termDepositExtraUzs = amountWithVariation(420000, monthIndex, 98, 150000)
+    const currencyBuyUzs = amountWithVariation(1280000, monthIndex, 99, 450000)
+    const investmentContributionUzs = amountWithVariation(680000, monthIndex, 100, 200000)
+    const externalCardTransferUzs = amountWithVariation(580000, monthIndex, 101, 180000)
+    const otherStreetVendorUzs = amountWithVariation(52000, monthIndex, 102, 8000)
+    const otherCornerShopUzs = amountWithVariation(89000, monthIndex, 103, 15000)
+    const otherUnclearMccUzs = amountWithVariation(118000, monthIndex, 104, 25000)
+    const largePlannedSpendUzs = amountWithVariation(11500000, monthIndex, 108, 9800000)
     const netflixAmountUzs = amountWithVariation(45000, monthIndex, 93, 30000)
     const aiSubAmountUzs = amountWithVariation(25000, monthIndex, 94, 15000)
+
+    transactions.push({
+      id: nextTxId(),
+      timestamp: toTimestamp(year, month, 10, 9, 35),
+      userId: 'user_1',
+      accountId: MAIN_SPENDING_ACCOUNT_ID,
+      kind: 'purchase',
+      direction: 'out',
+      mcc: null,
+      amountUzs: 0,
+      merchant: 'Microfinance 24%',
+      category: 'microloan',
+      description: `Погашение микрозайма ${monthCode}`,
+    })
 
     transactions.push(
       {
         id: nextTxId(),
-        timestamp: toTimestamp(year, month, 1, 9, 5),
+        timestamp: toTimestamp(year, month, 10, 9, 5),
         userId: 'user_1',
         accountId: 'acc_nbu_salary',
-        kind: 'income',
+        kind: 'transfer_external_card',
         direction: 'in',
         mcc: null,
         amountUzs: salaryAmountUzs,
         merchant: 'TechnoSoft LLC',
-        category: 'income',
-        description: `Зарплата ${monthCode}`,
+        category: 'internal',
+        description: `Поступление на Премиум Mastercard ${monthCode}`,
       },
       {
         id: nextTxId(),
-        timestamp: toTimestamp(year, month, 1, 9, 25),
+        timestamp: toTimestamp(year, month, 10, 9, 25),
         userId: 'user_1',
         accountId: 'acc_nbu_salary',
         kind: 'transfer_internal',
         direction: 'out',
         mcc: null,
-        amountUzs: ownTransferAmountUzs,
+        amountUzs: salaryAmountUzs,
         merchant: PRIMARY_BANK_RECREATE,
         category: 'internal',
-        description: 'Перевод на основную карту',
+        description: 'Перевод зарплаты на карту BANK OF RECREATE',
       },
       {
         id: nextTxId(),
-        timestamp: toTimestamp(year, month, 1, 9, 26),
+        timestamp: toTimestamp(year, month, 10, 9, 26),
         userId: 'user_1',
-        accountId: 'acc_tbc_main',
-        kind: 'transfer_internal',
+        accountId: MAIN_SPENDING_ACCOUNT_ID,
+        kind: 'income',
         direction: 'in',
         mcc: null,
-        amountUzs: ownTransferAmountUzs,
+        amountUzs: salaryAmountUzs,
         merchant: PRIMARY_BANK_RECREATE,
-        category: 'internal',
-        description: 'Зачисление с зарплатной карты',
+        category: 'income',
+        description: `Зарплата ${monthCode} (помечено как зарплата, не как перевод)`,
       },
       {
         id: nextTxId(),
@@ -735,7 +890,7 @@ function buildYearTransactions() {
         mcc: null,
         amountUzs: depositTopupAmountUzs,
         merchant: 'Вклад 12%',
-        category: 'internal',
+        category: 'deposit_account_fill',
         description: 'Пополнение вклада с основной карты',
       },
       {
@@ -751,38 +906,33 @@ function buildYearTransactions() {
         category: 'internal',
         description: 'Пополнение с основной карты',
       },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 23, 18, 30),
+        userId: 'user_1',
+        accountId: 'acc_tbc_deposit',
+        kind: 'transfer_internal',
+        direction: 'out',
+        mcc: null,
+        amountUzs: depositWithdrawalAmountUzs,
+        merchant: 'Вклад 12%',
+        category: 'internal',
+        description: 'Вывод на основную карту',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 23, 18, 31),
+        userId: 'user_1',
+        accountId: MAIN_SPENDING_ACCOUNT_ID,
+        kind: 'transfer_internal',
+        direction: 'in',
+        mcc: null,
+        amountUzs: depositWithdrawalAmountUzs,
+        merchant: 'Вклад 12%',
+        category: 'deposit_account_payout',
+        description: 'Зачисление с вклада',
+      },
     )
-
-    if (monthIndex % 3 === 2) {
-      transactions.push(
-        {
-          id: nextTxId(),
-          timestamp: toTimestamp(year, month, 23, 18, 30),
-          userId: 'user_1',
-          accountId: 'acc_tbc_deposit',
-          kind: 'transfer_internal',
-          direction: 'out',
-          mcc: null,
-          amountUzs: depositWithdrawalAmountUzs,
-          merchant: 'Вклад 12%',
-          category: 'internal',
-          description: 'Вывод на основную карту',
-        },
-        {
-          id: nextTxId(),
-          timestamp: toTimestamp(year, month, 23, 18, 31),
-          userId: 'user_1',
-          accountId: 'acc_tbc_main',
-          kind: 'transfer_internal',
-          direction: 'in',
-          mcc: null,
-          amountUzs: depositWithdrawalAmountUzs,
-          merchant: 'Вклад 12%',
-          category: 'internal',
-          description: 'Зачисление с вклада',
-        },
-      )
-    }
 
     PURCHASE_TEMPLATES.forEach((template) => {
       if (template.everyNMonths && monthIndex % template.everyNMonths !== 0) {
@@ -862,7 +1012,138 @@ function buildYearTransactions() {
         category: 'internal',
         description: 'Пополнение накопительной цели',
       },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 16, 15, 20),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'transfer_p2p',
+        direction: 'out',
+        mcc: null,
+        amountUzs: p2pTransferAmountUzs,
+        merchant: 'Перевод',
+        category: 'transfer',
+        description: 'На карту другому человеку',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 7, 11, 5),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'deposit_topup',
+        direction: 'out',
+        mcc: null,
+        amountUzs: termDepositExtraUzs,
+        merchant: 'Вклад 12%',
+        category: 'deposit',
+        description: 'Дополнительное пополнение вклада',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 9, 14, 40),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'currency_purchase',
+        direction: 'out',
+        mcc: null,
+        amountUzs: currencyBuyUzs,
+        merchant: 'Обменный пункт',
+        category: 'currency_purchase',
+        description: 'Покупка валюты (USD)',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 11, 10, 25),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'investment_contribution',
+        direction: 'out',
+        mcc: null,
+        amountUzs: investmentContributionUzs,
+        merchant: 'Capital Markets',
+        category: 'investments',
+        description: 'Пополнение инвестсчёта',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 18, 17, 50),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'transfer_external_card',
+        direction: 'out',
+        mcc: null,
+        amountUzs: externalCardTransferUzs,
+        merchant: 'Перевод на карту',
+        category: 'transfer_external',
+        description: (() => {
+          const targets = [
+            'Золотая HUMO (привязанная)',
+            'Капитал основная (привязанная)',
+            'Виза для путешествий (привязанная)',
+            'Премиум Mastercard (привязанная)',
+          ]
+          return `На карту вне семейных счетов: ${targets[monthIndex % targets.length]}`
+        })(),
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 13, 19, 12),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'purchase',
+        direction: 'out',
+        mcc: null,
+        amountUzs: otherStreetVendorUzs,
+        merchant: 'Уличный продавец',
+        category: 'other',
+        description: 'Оплата наличными на карту / терминал без MCC',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 15, 12, 33),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'purchase',
+        direction: 'out',
+        mcc: 5399,
+        amountUzs: otherCornerShopUzs,
+        merchant: 'Магазин у дома',
+        category: resolveCategoryByMcc(5399, 'other'),
+        description: 'Мелкая покупка, нестандартный код',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 22, 8, 18),
+        userId: 'user_1',
+        accountId: 'acc_tbc_main',
+        kind: 'purchase',
+        direction: 'out',
+        mcc: 5999,
+        amountUzs: otherUnclearMccUzs,
+        merchant: 'Точка ОП',
+        category: resolveCategoryByMcc(5999, 'other'),
+        description: 'Разное (неоднозначный MCC)',
+      },
     )
+
+    if (monthIndex % EXTRA_SPENDING_PRESSURE_PERIOD_MONTHS === 0) {
+      transactions.push({
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 23, 20, 45),
+        userId: 'user_1',
+        accountId: MAIN_SPENDING_ACCOUNT_ID,
+        kind: 'purchase',
+        direction: 'out',
+        mcc: 5311,
+        amountUzs: largePlannedSpendUzs,
+        merchant: 'Крупные семейные покупки',
+        category: resolveCategoryByMcc(5311, 'shopping'),
+        description: 'Плановые крупные расходы месяца',
+      })
+    }
+
+    const monthTransactions = transactions.splice(monthStartIndex)
+    transactions.push(...applyMicroloanFlow(monthTransactions, monthCode))
   })
 
   return transactions
@@ -897,6 +1178,14 @@ export const TRANSACTIONS = buildYearTransactions()
 /** Движения по привязанным картам (отдельный учёт от счетов в моках). */
 export const STANDALONE_CARD_MOVEMENTS = {
   ext_card_1: [
+    {
+      id: 'scm_h0',
+      timestamp: '2026-04-10T09:13:00+05:00',
+      direction: 'in',
+      amountUzs: 20000000,
+      merchant: 'Премиум Mastercard',
+      description: 'Зарплата (помечено вручную, не как перевод)',
+    },
     {
       id: 'scm_h1',
       timestamp: '2026-04-10T19:40:00+05:00',
@@ -1032,6 +1321,22 @@ export const STANDALONE_CARD_MOVEMENTS = {
   ],
   ext_card_mc: [
     {
+      id: 'scm_m0',
+      timestamp: '2026-04-10T09:05:00+05:00',
+      direction: 'in',
+      amountUzs: 20000000,
+      merchant: 'TechnoSoft LLC',
+      description: 'Зачисление зарплаты',
+    },
+    {
+      id: 'scm_m0b',
+      timestamp: '2026-04-10T09:12:00+05:00',
+      direction: 'out',
+      amountUzs: 20000000,
+      merchant: 'BANK OF RECREATE BY WIZBORT',
+      description: 'Перевод на Золотую HUMO (учтено как зарплата)',
+    },
+    {
       id: 'scm_m1',
       timestamp: '2026-04-10T20:00:00+05:00',
       direction: 'out',
@@ -1114,6 +1419,7 @@ export const SURPRISE_GOALS = [
 ]
 
 export const CATEGORIES = {
+  card_balance: { label: 'Остаток на карте', emoji: '💳', color: '#4cd6fb' },
   groceries: { label: 'Продукты', emoji: '🛒', color: '#22c55e' },
   transport: { label: 'Транспорт', emoji: '🚕', color: '#3b82f6' },
   restaurants: { label: 'Рестораны', emoji: '🍽️', color: '#f97316' },
@@ -1125,6 +1431,20 @@ export const CATEGORIES = {
   car: { label: 'Авто', emoji: '🔧', color: '#64748b' },
   internal: { label: 'Внутренний перевод', emoji: '↔️', color: '#94a3b8' },
   family: { label: 'Семейный перевод', emoji: '👨‍👩‍👦', color: '#fbbf24' },
+  /** P2P и переводы на привязанные карты других банков — в мониторинге суммируются в одну категорию. */
+  transfer: { label: 'Переводы', emoji: '💸', color: '#38bdf8' },
+  /** Та же смысловая группа, что и transfer; ключ сохранён для операций с category из API. */
+  transfer_external: { label: 'Переводы', emoji: '💸', color: '#38bdf8' },
+  deposit: { label: 'Вклад', emoji: '🏦', color: '#a78bfa' },
+  /** Перевод на вклад со своей карты — в затратах как отдельная статья. */
+  deposit_account_fill: { label: 'Пополнение вклада', emoji: '🏦', color: '#8b5cf6' },
+  /** Возврат со вклада на карту — в поступлениях как дополнительный доход. */
+  deposit_account_payout: { label: 'Снятие со вклада', emoji: '💵', color: '#34d399' },
+  currency_purchase: { label: 'Покупка валюты', emoji: '💱', color: '#eab308' },
+  investments: { label: 'Инвестиции', emoji: '📈', color: '#10b981' },
+  goal_topup: { label: 'Накопительная цель', emoji: '🎯', color: '#f97316' },
+  microloan: { label: 'Микрозайм', emoji: '🧾', color: '#fb7185' },
+  other: { label: 'Другое', emoji: '⋯', color: '#78716c' },
   income: { label: 'Доход', emoji: '💰', color: '#22c55e' },
 }
 
