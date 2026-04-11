@@ -3,12 +3,15 @@ import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
 import AddLinkedCardModal from '../components/AddLinkedCardModal'
 import CardDetailsSheet from '../components/CardDetailsSheet'
+import OpenDepositModal from '../components/OpenDepositModal'
+import DepositDetailSheet from '../components/DepositDetailSheet'
+import DepositsOverviewSheet from '../components/DepositsOverviewSheet'
+import SpecialOffersAllSheet from '../components/SpecialOffersAllSheet'
 import PaymentCardListRow from '../components/PaymentCardListRow'
 import UzsAmount from '../components/UzsAmount'
 import useExchangeRates from '../hooks/useExchangeRates'
 import { ACCOUNTS, LINKED_EXTERNAL_CARDS, PRIMARY_BANK_RECREATE } from '../mockData'
 import { isSessionUnlocked } from '../utils/sessionLock'
-import { getPaymentCardsTotalUzs } from '../utils'
 import {
   loadPrimaryCardId,
   loadRemovedRowIds,
@@ -16,6 +19,20 @@ import {
   persistRemovedRowIds,
   saveDeletedCard,
 } from '../utils/deletedCards'
+import {
+  loadDeposits,
+  saveDeposits,
+  topUpDeposit,
+  withdrawFromDeposit,
+  createBuiltInDemoDeposits,
+} from '../utils/deposits'
+import {
+  loadDepositCardMovements,
+  appendDepositCardMovement,
+  buildDepositOutMovement,
+  buildDepositInMovement,
+} from '../utils/depositCardMovements'
+import { SPECIAL_OFFERS } from '../data/specialOffers'
 
 const HOME_OWNER_ID = 'user_1'
 const PRIMARY_ACCOUNT_ID = 'acc_tbc_main'
@@ -26,10 +43,13 @@ function last4FromPan(pan) {
   return d.slice(-4)
 }
 
-function formatUzsBalance(amount) {
-  return Number(amount)
-    .toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    .replace(',', '.')
+function depositCountRu(n) {
+  const x = Math.abs(n) % 100
+  const y = x % 10
+  if (x > 10 && x < 20) return `${n} вкладов`
+  if (y > 1 && y < 5) return `${n} вклада`
+  if (y === 1) return `${n} вклад`
+  return `${n} вкладов`
 }
 
 export default function HomePage() {
@@ -42,6 +62,42 @@ export default function HomePage() {
   const [primaryCardId, setPrimaryCardId] = useState(loadPrimaryCardId)
   const [renamedLabels, setRenamedLabels] = useState({})
   const [removedRowIds, setRemovedRowIds] = useState(loadRemovedRowIds)
+  const [deposits, setDeposits] = useState(loadDeposits)
+  const [openDepositOpen, setOpenDepositOpen] = useState(false)
+  const [depositsOverviewOpen, setDepositsOverviewOpen] = useState(false)
+  const [selectedDeposit, setSelectedDeposit] = useState(null)
+  const [cardBalanceDeltas, setCardBalanceDeltas] = useState({})
+  const [linkedMovementsByCardId, setLinkedMovementsByCardId] = useState(loadDepositCardMovements)
+  const [specialOfferIndex, setSpecialOfferIndex] = useState(0)
+  const [specialOffersAllOpen, setSpecialOffersAllOpen] = useState(false)
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    if (sp.get('seedDeposits') !== '1') return
+    const cur = loadDeposits()
+    if (cur.length > 0) return
+    const d = createBuiltInDemoDeposits()
+    saveDeposits(d)
+    setDeposits(d)
+    const next = new URLSearchParams(window.location.search)
+    next.delete('seedDeposits')
+    const q = next.toString()
+    window.history.replaceState(
+      {},
+      '',
+      q ? `${window.location.pathname}?${q}` : window.location.pathname,
+    )
+  }, [])
+
+  useEffect(() => {
+    if (SPECIAL_OFFERS.length <= 1) return
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    if (mq.matches) return
+    const id = window.setInterval(() => {
+      setSpecialOfferIndex((i) => (i + 1) % SPECIAL_OFFERS.length)
+    }, 4000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const handleAddLinkedCard = useCallback((card) => {
     setUserLinkedCards((prev) => [...prev, card])
@@ -105,7 +161,80 @@ export default function HomePage() {
     persistPrimaryCardId(cardId)
   }, [])
 
-  const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems, baseTotalUzs } =
+  const applyCardDelta = useCallback((cardId, deltaInCardCurrency) => {
+    setCardBalanceDeltas((prev) => ({
+      ...prev,
+      [cardId]: (prev[cardId] ?? 0) + deltaInCardCurrency,
+    }))
+  }, [])
+
+  const handleDepositCreated = useCallback(
+    (deposit, card, amountInCardCurrency) => {
+      setDeposits((prev) => {
+        const next = [...prev, deposit]
+        saveDeposits(next)
+        return next
+      })
+      applyCardDelta(card.id, -amountInCardCurrency)
+      const m = buildDepositOutMovement(card, amountInCardCurrency, 'Открытие вклада')
+      setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, m))
+      setOpenDepositOpen(false)
+      setDepositsOverviewOpen(true)
+    },
+    [applyCardDelta],
+  )
+
+  const handleOpenDepositsEntry = useCallback(() => {
+    if (deposits.length === 0) {
+      setOpenDepositOpen(true)
+    } else {
+      setDepositsOverviewOpen(true)
+    }
+  }, [deposits.length])
+
+  const handleDepositTopUp = useCallback(
+    (deposit, depositAmount, card, amountInCardCurrency) => {
+      setDeposits((prev) => {
+        const next = prev.map((d) =>
+          d.id === deposit.id ? topUpDeposit(d, depositAmount, card.id) : d,
+        )
+        saveDeposits(next)
+        return next
+      })
+      applyCardDelta(card.id, -amountInCardCurrency)
+      const mov = buildDepositOutMovement(card, amountInCardCurrency, 'Пополнение вклада')
+      setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, mov))
+      setSelectedDeposit((prev) =>
+        prev?.id === deposit.id
+          ? topUpDeposit(deposit, depositAmount, card.id)
+          : prev,
+      )
+    },
+    [applyCardDelta],
+  )
+
+  const handleDepositWithdraw = useCallback(
+    (deposit, withdrawAmount, card, amountToCard) => {
+      setDeposits((prev) => {
+        const next = prev.map((d) =>
+          d.id === deposit.id ? withdrawFromDeposit(d, withdrawAmount, card.id) : d,
+        )
+        saveDeposits(next)
+        return next
+      })
+      applyCardDelta(card.id, amountToCard)
+      const mov = buildDepositInMovement(card, amountToCard, 'Снятие со вклада')
+      setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, mov))
+      setSelectedDeposit((prev) =>
+        prev?.id === deposit.id
+          ? withdrawFromDeposit(deposit, withdrawAmount, card.id)
+          : prev,
+      )
+    },
+    [applyCardDelta],
+  )
+
+  const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems } =
     useMemo(() => {
       const primary = ACCOUNTS.find((a) => a.id === PRIMARY_ACCOUNT_ID)
       const bank = primary?.bank ?? PRIMARY_BANK_RECREATE
@@ -180,14 +309,11 @@ export default function HomePage() {
         }
       })
 
-      const baseTotalUzs = getPaymentCardsTotalUzs(HOME_OWNER_ID)
-
       return {
         primaryBank: bank,
         primaryLinkedItems: primaryLinked,
         otherLinkedBase: otherLinked,
         accountItems: accounts,
-        baseTotalUzs,
       }
     }, [])
 
@@ -282,29 +408,35 @@ export default function HomePage() {
     return items
   }, [accountItems, removedRowIds, renamedLabels, resolvedPrimaryId])
 
-  const allUserCards = useMemo(
-    () => [...sortedPrimaryLinked, ...sortedOtherLinked, ...sortedAccountItems],
-    [sortedPrimaryLinked, sortedOtherLinked, sortedAccountItems],
-  )
-
-  const removedFromTotalUzs = useMemo(() => {
-    let sub = 0
-    for (const id of removedRowIds) {
-      const linked = LINKED_EXTERNAL_CARDS.find((c) => c.id === id)
-      if (linked) sub += Number(linked.balanceUzs ?? 0)
-      const acc = ACCOUNTS.find((a) => a.id === id)
-      if (acc && acc.currency === 'UZS') sub += Number(acc.balanceUzs ?? 0)
+  const allUserCards = useMemo(() => {
+    const applyDelta = (c) => {
+      const d = cardBalanceDeltas[c.id]
+      if (!d) return c
+      if (c.foreignCurrency) {
+        return { ...c, balanceForeign: (c.balanceForeign ?? 0) + d }
+      }
+      return { ...c, balanceUzs: (c.balanceUzs ?? 0) + d }
     }
-    return sub
-  }, [removedRowIds])
+    return [
+      ...sortedPrimaryLinked.map(applyDelta),
+      ...sortedOtherLinked.map(applyDelta),
+      ...sortedAccountItems.map(applyDelta),
+    ]
+  }, [sortedPrimaryLinked, sortedOtherLinked, sortedAccountItems, cardBalanceDeltas])
 
-  const totalPaymentUzs =
-    baseTotalUzs -
-    removedFromTotalUzs +
-    userLinkedCards.reduce((sum, c) => sum + Number(c.balanceUzs), 0)
-  const totalPaymentUzsRounded = Math.round(totalPaymentUzs * 100) / 100
+  const cardsOnlyTotalUzs = useMemo(() => {
+    let sum = 0
+    const allCardItems = [...sortedPrimaryLinked, ...sortedOtherLinked]
+    for (const card of allCardItems) {
+      const delta = cardBalanceDeltas[card.id] ?? 0
+      sum += (card.balanceUzs ?? 0) + delta
+    }
+    return Math.round(sum * 100) / 100
+  }, [sortedPrimaryLinked, sortedOtherLinked, cardBalanceDeltas])
 
-  const balanceValue = isUnlocked ? formatUzsBalance(totalPaymentUzsRounded) : '••••••'
+  const totalPaymentUzsRounded = cardsOnlyTotalUzs
+
+  const balanceValue = isUnlocked ? String(Math.round(totalPaymentUzsRounded)) : '••••••'
   const spendingValue = isUnlocked ? '- 142 500' : '- ••••••'
   const usdValue = isUnlocked ? rates.USD.rate.toLocaleString('ru-RU') : '•••'
   const eurValue = isUnlocked ? rates.EUR.rate.toLocaleString('ru-RU') : '•••'
@@ -331,10 +463,15 @@ export default function HomePage() {
             <div className="relative z-10 flex h-full flex-col justify-between">
               <div>
                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[#003642]/70">
-                  Текущий баланс
+                  Баланс карт
                 </p>
                 <h2 className="text-4xl font-extrabold tracking-tight text-[#003642] md:text-5xl">
-                  <UzsAmount as="span" value={balanceValue} />
+                  <UzsAmount
+                    as="span"
+                    compact
+                    compactFrom={1000}
+                    value={balanceValue}
+                  />
                 </h2>
               </div>
               <div className="mt-12 flex items-center justify-between">
@@ -352,7 +489,7 @@ export default function HomePage() {
                 </div>
                 <button
                   aria-expanded={detailsOpen}
-                  className="flex items-center gap-2 rounded-full bg-[#003642] px-5 py-2 text-sm font-bold text-[#4cd6fb] transition-all hover:opacity-90 active:scale-95"
+                  className="flex items-center gap-2 rounded-full bg-[#003642] pl-5 pr-7 py-2 text-sm font-bold text-[#4cd6fb] transition-all hover:opacity-90 active:scale-95"
                   onClick={() => setDetailsOpen((open) => !open)}
                   type="button"
                 >
@@ -380,7 +517,6 @@ export default function HomePage() {
                     {sortedPrimaryLinked.map((item) => (
                       <PaymentCardListRow
                         key={item.id}
-                        formatBalance={formatUzsBalance}
                         isUnlocked={isUnlocked}
                         item={item}
                         onSelect={setSelectedCard}
@@ -400,7 +536,6 @@ export default function HomePage() {
                     {sortedOtherLinked.map((item) => (
                       <PaymentCardListRow
                         key={item.id}
-                        formatBalance={formatUzsBalance}
                         isUnlocked={isUnlocked}
                         item={item}
                         onSelect={setSelectedCard}
@@ -428,7 +563,6 @@ export default function HomePage() {
                     {sortedAccountItems.map((item) => (
                       <PaymentCardListRow
                         key={item.id}
-                        formatBalance={formatUzsBalance}
                         isUnlocked={isUnlocked}
                         item={item}
                         onSelect={setSelectedCard}
@@ -442,45 +576,53 @@ export default function HomePage() {
           ) : null}
         </section>
 
-        <div className="mb-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <div className="aspect-square rounded-2xl bg-[#112036] p-5 transition-colors hover:bg-[#1c2a41] md:aspect-auto">
-            <div className="flex h-full flex-col justify-between">
-              <span className="material-symbols-outlined text-3xl text-[#4cd6fb]">savings</span>
+        <div className="mb-10 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <button
+            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
+            onClick={handleOpenDepositsEntry}
+            type="button"
+          >
+            <div className="flex flex-col gap-2">
+              <span className="material-symbols-outlined text-2xl text-[#4cd6fb]">savings</span>
               <div>
-                <h3 className="font-bold text-[#d6e3ff]">Вклады</h3>
-                <p className="mt-1 text-xs text-[#bcc9ce]">До 15% годовых</p>
+                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">
+                  {deposits.length === 0 ? 'Открыть вклад' : 'Вклады'}
+                </h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">
+                  {deposits.length === 0 ? 'До 20% годовых' : depositCountRu(deposits.length)}
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <div className="rounded-2xl bg-[#112036] px-4 py-3 transition-colors hover:bg-[#1c2a41]">
+            <div className="flex flex-col gap-2">
+              <span className="material-symbols-outlined text-2xl text-[#58d6f1]">campaign</span>
+              <div>
+                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Акции</h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Кэшбэк до 30%</p>
               </div>
             </div>
           </div>
 
-          <div className="aspect-square rounded-2xl bg-[#112036] p-5 transition-colors hover:bg-[#1c2a41] md:aspect-auto">
-            <div className="flex h-full flex-col justify-between">
-              <span className="material-symbols-outlined text-3xl text-[#58d6f1]">campaign</span>
-              <div>
-                <h3 className="font-bold text-[#d6e3ff]">Акции</h3>
-                <p className="mt-1 text-xs text-[#bcc9ce]">Кэшбэк до 30%</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="aspect-square rounded-2xl bg-[#112036] p-5 transition-colors hover:bg-[#1c2a41] md:aspect-auto">
-            <div className="flex h-full flex-col justify-between">
-              <span className="material-symbols-outlined text-3xl text-[#4cd6fb]">
+          <div className="rounded-2xl bg-[#112036] px-4 py-3 transition-colors hover:bg-[#1c2a41]">
+            <div className="flex flex-col gap-2">
+              <span className="material-symbols-outlined text-2xl text-[#4cd6fb]">
                 health_and_safety
               </span>
               <div>
-                <h3 className="font-bold text-[#d6e3ff]">Страхование</h3>
-                <p className="mt-1 text-xs text-[#bcc9ce]">Защита активов</p>
+                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Страхование</h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Защита активов</p>
               </div>
             </div>
           </div>
 
-          <div className="aspect-square rounded-2xl bg-[#112036] p-5 transition-colors hover:bg-[#1c2a41] md:aspect-auto">
-            <div className="flex h-full flex-col justify-between">
-              <span className="material-symbols-outlined text-3xl text-[#58d6f1]">local_offer</span>
+          <div className="rounded-2xl bg-[#112036] px-4 py-3 transition-colors hover:bg-[#1c2a41]">
+            <div className="flex flex-col gap-2">
+              <span className="material-symbols-outlined text-2xl text-[#58d6f1]">local_offer</span>
               <div>
-                <h3 className="font-bold text-[#d6e3ff]">Предложения</h3>
-                <p className="mt-1 text-xs text-[#bcc9ce]">Для вас</p>
+                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Предложения</h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Для вас</p>
               </div>
             </div>
           </div>
@@ -489,56 +631,51 @@ export default function HomePage() {
         <section className="mb-10 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-xl font-bold text-[#d6e3ff]">Специальные предложения</h2>
-            <button className="text-sm font-medium text-[#4cd6fb]">Все</button>
+            <button
+              className="text-sm font-medium text-[#4cd6fb]"
+              onClick={() => setSpecialOffersAllOpen(true)}
+              type="button"
+            >
+              Все
+            </button>
           </div>
 
-          <div className="no-scrollbar flex snap-x gap-4 overflow-x-auto pb-4">
-            <div className="relative flex h-40 min-w-[280px] snap-center flex-col justify-end overflow-hidden rounded-3xl bg-[#0d1c32] p-6">
-              <img
-                className="absolute inset-0 h-full w-full object-cover opacity-40"
-                alt="modern skyscraper architecture reflecting blue sky and neon lights at dusk"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZhfBPmpUxgKQVkWHJWcu0hNyljVYXGCXOeuz_j708scbDnHq3bS2Df0tBDxBvGPkosOcz2atW9fLr8p4ms9AajhRDZdSUodt_jfSNwqgSXkHJtruQXZtgkbQPp-8U3q9EBp_Wh-SYqdlDI6xJRxtDTpbhP4Gft44XwRBYeLK5EI7OJXWZDpE13y5zwjSkqtRDd6tzatPtYPW1TH01roAPtpWgd8u83riO1mKPl6suflWl4bTKkCJ5wPmUAbKZI_3RBWkzGImjdPL9"
-              />
-              <div className="relative z-10">
-                <span className="mb-2 inline-block rounded-full border border-[#4cd6fb]/30 bg-[#4cd6fb]/20 px-2 py-1 text-[10px] font-bold text-[#4cd6fb]">
-                  VIP ПАКЕТ
-                </span>
-                <h4 className="text-lg font-bold leading-tight text-[#d6e3ff]">
-                  Обслуживание уровня Platinum
-                </h4>
-              </div>
+          <div className="relative overflow-hidden rounded-3xl">
+            <div
+              className="flex transition-transform duration-500 ease-out"
+              style={{ transform: `translateX(-${specialOfferIndex * 100}%)` }}
+            >
+              {SPECIAL_OFFERS.map((o) => (
+                <div
+                  key={o.id}
+                  className="relative flex h-40 min-w-full shrink-0 flex-col justify-end overflow-hidden bg-[#0d1c32] p-6"
+                >
+                  <img
+                    className="absolute inset-0 h-full w-full object-cover opacity-40"
+                    alt={o.imageAlt}
+                    src={o.image}
+                  />
+                  <div className="relative z-10">
+                    <span
+                      className={`mb-2 inline-block rounded-full border px-2 py-1 text-[10px] font-bold ${o.tagClass}`}
+                    >
+                      {o.tag}
+                    </span>
+                    <h4 className="text-lg font-bold leading-tight text-[#d6e3ff]">{o.title}</h4>
+                  </div>
+                </div>
+              ))}
             </div>
-
-            <div className="relative flex h-40 min-w-[280px] snap-center flex-col justify-end overflow-hidden rounded-3xl bg-[#0d1c32] p-6">
-              <img
-                className="absolute inset-0 h-full w-full object-cover opacity-40"
-                alt="luxurious yacht interior"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjJiY09UnaDDcguY3QFXXG9NajehRFEJ5389F3255qfRouKwtzbkqk49oi2Qohq2WgDcnwLoDIXprhT6oh7Ce9Z0xguHMniqC12yZo_fkpKKpnhSOZw9wdDs2b9VpSmZqQmswbrMZLKkIeA63e9ztEClytOFcYpMBOTFduZ6LTArpRb7vAWlAjRi12WJpctlhVZIGndzNvQmFXnejcKmwNpCoblIK5o-p2BzfzQHjqsgQhs1eeHt3Dk1Yag938GJZzQrsqVEEuOrRI"
-              />
-              <div className="relative z-10">
-                <span className="mb-2 inline-block rounded-full border border-[#58d6f1]/30 bg-[#58d6f1]/20 px-2 py-1 text-[10px] font-bold text-[#58d6f1]">
-                  TRAVEL
-                </span>
-                <h4 className="text-lg font-bold leading-tight text-[#d6e3ff]">
-                  Мильное страхование поездок
-                </h4>
-              </div>
-            </div>
-
-            <div className="relative flex h-40 min-w-[280px] snap-center flex-col justify-end overflow-hidden rounded-3xl bg-[#0d1c32] p-6">
-              <img
-                className="absolute inset-0 h-full w-full object-cover opacity-40"
-                alt="abstract financial data visualization"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuChARR0sk9sTUar-F2PdDXcWZ5lRh5uX7t9P294SRWvPkn0w8bb2lqs_758XBnSzz9Pdb3zzSuFCV9g7c2soddMAMba3uEGN7KrIih6_FJAq3UN2WquBGq942s5rPU0vLkasmEQ2K1hvtbIvB3WmqIC2ET_vYZVYendrA4HrE9MNfnFBSCVxVFPZ0MLiHkgCVIgH8N_hHMGBV2Gib6Z1fTbR2EzIrcIVzRTxj4gN4L3oK4dZiAsdfGHGnWBR2BEJHd-uBx25Zgh1Hz-"
-              />
-              <div className="relative z-10">
-                <span className="mb-2 inline-block rounded-full border border-[#4cd6fb]/30 bg-[#4cd6fb]/20 px-2 py-1 text-[10px] font-bold text-[#4cd6fb]">
-                  ИНВЕСТИЦИИ
-                </span>
-                <h4 className="text-lg font-bold leading-tight text-[#d6e3ff]">
-                  Портфельное управление Recreate
-                </h4>
-              </div>
+            <div className="pointer-events-none absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+              {SPECIAL_OFFERS.map((o, i) => (
+                <span
+                  key={o.id}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === specialOfferIndex ? 'w-6 bg-[#4cd6fb]' : 'w-1.5 bg-[#4cd6fb]/35'
+                  }`}
+                  aria-hidden
+                />
+              ))}
             </div>
           </div>
         </section>
@@ -610,6 +747,7 @@ export default function HomePage() {
         card={selectedCard}
         isOpen={selectedCard != null}
         isUnlocked={isUnlocked}
+        linkedMovementsByCardId={linkedMovementsByCardId}
         onClose={() => setSelectedCard(null)}
         onRename={handleRenameCard}
         onDelete={handleDeleteCard}
@@ -617,6 +755,40 @@ export default function HomePage() {
         onSetPrimary={handleSetPrimary}
         isPrimary={selectedCard != null && selectedCard.id === resolvedPrimaryId}
       />
+
+      <SpecialOffersAllSheet
+        isOpen={specialOffersAllOpen}
+        offers={SPECIAL_OFFERS}
+        onClose={() => setSpecialOffersAllOpen(false)}
+      />
+
+      <OpenDepositModal
+        isOpen={openDepositOpen}
+        onClose={() => setOpenDepositOpen(false)}
+        allUserCards={allUserCards}
+        rates={rates}
+        onDepositCreated={handleDepositCreated}
+      />
+
+      <DepositsOverviewSheet
+        deposits={deposits}
+        isOpen={depositsOverviewOpen}
+        isUnlocked={isUnlocked}
+        onClose={() => setDepositsOverviewOpen(false)}
+        onOpenNewDeposit={() => setOpenDepositOpen(true)}
+        onSelectDeposit={(dep) => setSelectedDeposit(dep)}
+      />
+
+      {selectedDeposit ? (
+        <DepositDetailSheet
+          deposit={selectedDeposit}
+          allUserCards={allUserCards}
+          rates={rates}
+          onClose={() => setSelectedDeposit(null)}
+          onTopUp={handleDepositTopUp}
+          onWithdraw={handleDepositWithdraw}
+        />
+      ) : null}
     </div>
   )
 }

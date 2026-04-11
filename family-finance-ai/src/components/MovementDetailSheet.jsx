@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import UzsAmount from './UzsAmount'
 import { CATEGORIES } from '../mockData'
 
@@ -55,6 +55,7 @@ function getCategoryLabel(m) {
   if (/кино|игр|steam/i.test(desc)) return '🎬 Развлечения'
   if (/подписк|spotify|netflix/i.test(desc)) return '📱 Подписки'
   if (/перевод|зачисл|возврат|выплат/i.test(desc)) return '↔️ Перевод'
+  if (/вклад/i.test(desc) || /вклад/i.test(m.merchant ?? '')) return '🏦 Вклад'
   if (/бронир|отель|билет/i.test(desc)) return '✈️ Путешествия'
   if (/электрон/i.test(desc)) return '🛍️ Покупки'
   return '🛍️ Покупки'
@@ -72,6 +73,7 @@ function resolveCategoryKey(m) {
   if (/кино|игр|steam/i.test(desc)) return 'entertainment'
   if (/подписк/i.test(desc)) return 'subscriptions'
   if (/перевод|зачисл|возврат|выплат/i.test(desc)) return 'internal'
+  if (/вклад/i.test(desc) || /вклад/i.test((m.merchant ?? '').toLowerCase())) return 'internal'
   if (/бронир|отель|билет/i.test(desc)) return 'shopping'
   if (/электрон/i.test(desc)) return 'shopping'
   return 'shopping'
@@ -106,6 +108,19 @@ export default function MovementDetailSheet({
   onClose,
   onOpenMovement,
 }) {
+  const [isClosing, setIsClosing] = useState(false)
+
+  const requestClose = useCallback(() => {
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      onClose()
+      return
+    }
+    setIsClosing((prev) => (prev ? prev : true))
+  }, [onClose])
+
   const fx = movement.amountForeign != null && movement.currency
   const isIn = movement.direction === 'in'
   const fiscal = useMemo(() => mockFiscalMeta(movement.id), [movement.id])
@@ -130,16 +145,42 @@ export default function MovementDetailSheet({
     }
   }, [])
 
+  useEffect(() => {
+    setIsClosing(false)
+  }, [movement.id])
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        if (isClosing) return
+        requestClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [requestClose, isClosing])
+
+  const handlePanelAnimationEnd = (e) => {
+    if (e.target !== e.currentTarget) return
+    if (!isClosing) return
+    onClose()
+  }
+
   return (
     <div className="fixed inset-0 z-[120] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4">
       <button
         aria-label="Закрыть"
-        className="animate-sheet-backdrop-in absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${
+          isClosing ? 'animate-sheet-backdrop-out' : 'animate-sheet-backdrop-in'
+        }`}
+        onClick={requestClose}
         type="button"
       />
       <div
-        className="animate-sheet-panel-in relative z-10 flex h-[min(82dvh,740px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(82dvh,760px)] sm:max-w-lg sm:rounded-3xl sm:border-[#4cd6fb]/20"
+        className={`relative z-10 flex h-[min(82dvh,740px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(82dvh,760px)] sm:max-w-lg sm:rounded-3xl sm:border-[#4cd6fb]/20 ${
+          isClosing ? 'animate-sheet-panel-out' : 'animate-sheet-panel-in'
+        }`}
+        onAnimationEnd={handlePanelAnimationEnd}
         role="dialog"
         aria-modal="true"
         aria-labelledby="movement-detail-title"
@@ -153,7 +194,7 @@ export default function MovementDetailSheet({
           </h2>
           <button
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#bcc9ce] hover:bg-[#112036] hover:text-[#4cd6fb]"
-            onClick={onClose}
+            onClick={requestClose}
             type="button"
             aria-label="Закрыть"
           >

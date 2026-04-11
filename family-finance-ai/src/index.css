@@ -127,10 +127,60 @@ body {
   }
 }
 
+@keyframes sheet-backdrop-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-slide-down {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    opacity: 0.92;
+    transform: translate3d(0, calc(100% + 12px), 0);
+  }
+}
+
+@keyframes sheet-pop-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.94) translate3d(0, 16px, 0);
+  }
+}
+
+.animate-sheet-backdrop-out {
+  animation: sheet-backdrop-out 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-sheet-panel-out {
+  animation: sheet-slide-down 0.45s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@media (min-width: 640px) {
+  .animate-sheet-panel-out {
+    animation: sheet-pop-out 0.4s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
 
   .animate-sheet-backdrop-in,
-  .animate-sheet-panel-in {
+  .animate-sheet-panel-in,
+  .animate-sheet-backdrop-out,
+  .animate-sheet-panel-out {
     animation: none;
     opacity: 1;
     transform: none;

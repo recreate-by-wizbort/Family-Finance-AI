@@ -1,13 +1,8 @@
 import PaymentSystemLogo from './PaymentSystemLogo'
 import UzsAmount from './UzsAmount'
+import { formatForeignBalanceShort } from '../utils/balanceDisplay'
 
-function formatForeignAmount(amount) {
-  return Number(amount)
-    .toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    .replace(',', '.')
-}
-
-export default function PaymentCardListRow({ formatBalance, isUnlocked, item, onSelect, isPrimary }) {
+export default function PaymentCardListRow({ isUnlocked, item, onSelect, isPrimary }) {
   const isForeign = item.foreignCurrency && item.balanceForeign != null
   return (
     <li className="list-none">
@@ -30,14 +25,16 @@ export default function PaymentCardListRow({ formatBalance, isUnlocked, item, on
           <p className="truncate text-base font-semibold tabular-nums text-[#d6e3ff]">
             {isUnlocked ? (
               isForeign ? (
-                <span>
-                  {formatForeignAmount(item.balanceForeign)}{' '}
-                  <span className="text-[0.55em] font-bold uppercase tracking-wide text-[#bcc9ce]">
-                    {item.foreignCurrency}
-                  </span>
+                <span className="tabular-nums">
+                  {formatForeignBalanceShort(item.balanceForeign, item.foreignCurrency)}
                 </span>
               ) : (
-                <UzsAmount as="span" value={formatBalance(item.balanceUzs)} />
+                <UzsAmount
+                  as="span"
+                  compact
+                  compactFrom={1000}
+                  value={String(Math.round(item.balanceUzs ?? 0))}
+                />
               )
             ) : (
               <span>•••••• {isForeign ? item.foreignCurrency : 'UZS'}</span>

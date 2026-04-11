@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import UzsAmount from './UzsAmount'
 import MovementDetailSheet from './MovementDetailSheet'
-import { getRawMovementsForCard, withBalanceAfter } from '../utils/cardMovements'
+import { getMergedRawMovementsForCard, withBalanceAfter } from '../utils/cardMovements'
+import { formatForeignBalanceShort } from '../utils/balanceDisplay'
 
 function formatPanGroups(pan) {
   const d = String(pan).replace(/\D/g, '')
@@ -44,6 +45,8 @@ export default function CardDetailsSheet({
   isPrimary,
   /** Все карты/счёта пользователя — для поиска операций сразу по всем */
   allUserCards = [],
+  /** Доп. движения по картам (вклады и т.п.), id карты → массив операций */
+  linkedMovementsByCardId = {},
   onSelectCard,
 }) {
   const [tab, setTab] = useState('all')
@@ -54,6 +57,18 @@ export default function CardDetailsSheet({
   const [selectedMovement, setSelectedMovement] = useState(null)
   const [movementSearchQuery, setMovementSearchQuery] = useState('')
   const [pendingOpenAfterCardSwitch, setPendingOpenAfterCardSwitch] = useState(null)
+  const [isClosing, setIsClosing] = useState(false)
+
+  const requestClose = useCallback(() => {
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      onClose()
+      return
+    }
+    setIsClosing((prev) => (prev ? prev : true))
+  }, [onClose])
 
   useEffect(() => {
     if (!isOpen) {
@@ -64,15 +79,18 @@ export default function CardDetailsSheet({
       setSelectedMovement(null)
       setMovementSearchQuery('')
       setPendingOpenAfterCardSwitch(null)
+      setIsClosing(false)
       return
     }
     setMenuOpen(false)
     setRenaming(false)
     setConfirmDelete(false)
+    setIsClosing(false)
   }, [isOpen])
 
   useEffect(() => {
     if (!isOpen || !card?.id) return
+    setIsClosing(false)
     setTab('all')
     setSelectedMovement(null)
     setMovementSearchQuery('')
@@ -102,13 +120,14 @@ export default function CardDetailsSheet({
         if (menuOpen) { setMenuOpen(false); return }
         if (confirmDelete) { setConfirmDelete(false); return }
         if (renaming) { setRenaming(false); return }
-        if (selectedMovement) { setSelectedMovement(null); return }
-        onClose()
+        if (selectedMovement) return
+        if (isClosing) return
+        requestClose()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isOpen, onClose, menuOpen, confirmDelete, renaming, selectedMovement])
+  }, [isOpen, requestClose, menuOpen, confirmDelete, renaming, selectedMovement, isClosing])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -117,7 +136,10 @@ export default function CardDetailsSheet({
     return () => window.removeEventListener('click', onClick)
   }, [menuOpen])
 
-  const movements = useMemo(() => getRawMovementsForCard(card), [card])
+  const movements = useMemo(
+    () => getMergedRawMovementsForCard(card, linkedMovementsByCardId),
+    [card, linkedMovementsByCardId],
+  )
 
   const movementsWithBalance = useMemo(
     () => (card ? withBalanceAfter(card, movements) : []),
@@ -129,7 +151,7 @@ export default function CardDetailsSheet({
     if (!q || !allUserCards.length) return []
     const rows = []
     for (const c of allUserCards) {
-      const raw = getRawMovementsForCard(c)
+      const raw = getMergedRawMovementsForCard(c, linkedMovementsByCardId)
       const withBal = withBalanceAfter(c, raw)
       for (const m of withBal) {
         const hay = [
@@ -154,7 +176,7 @@ export default function CardDetailsSheet({
       String(b.movement.timestamp).localeCompare(String(a.movement.timestamp)),
     )
     return rows.slice(0, 100)
-  }, [allUserCards, movementSearchQuery])
+  }, [allUserCards, movementSearchQuery, linkedMovementsByCardId])
 
   const filtered = useMemo(() => {
     if (tab === 'in') return movementsWithBalance.filter((m) => m.direction === 'in')
@@ -209,6 +231,12 @@ export default function CardDetailsSheet({
   const handleConfirmDelete = () => {
     if (onDelete) onDelete(card)
     setConfirmDelete(false)
+    requestClose()
+  }
+
+  const handlePanelAnimationEnd = (e) => {
+    if (e.target !== e.currentTarget) return
+    if (!isClosing) return
     onClose()
   }
 
@@ -223,14 +251,19 @@ export default function CardDetailsSheet({
     <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4">
       <button
         aria-label="Закрыть"
-        className="animate-sheet-backdrop-in absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${
+          isClosing ? 'animate-sheet-backdrop-out' : 'animate-sheet-backdrop-in'
+        }`}
+        onClick={requestClose}
         type="button"
       />
       <div
         aria-labelledby="card-sheet-title"
         aria-modal="true"
-        className="animate-sheet-panel-in relative z-10 flex h-[min(82dvh,680px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(82dvh,700px)] sm:max-w-lg sm:rounded-3xl"
+        className={`relative z-10 flex h-[min(82dvh,680px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(82dvh,700px)] sm:max-w-lg sm:rounded-3xl ${
+          isClosing ? 'animate-sheet-panel-out' : 'animate-sheet-panel-in'
+        }`}
+        onAnimationEnd={handlePanelAnimationEnd}
         role="dialog"
       >
         {/* Header */}
@@ -248,7 +281,7 @@ export default function CardDetailsSheet({
           </h2>
           <button
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#bcc9ce] hover:bg-[#112036] hover:text-[#4cd6fb]"
-            onClick={onClose}
+            onClick={requestClose}
             type="button"
           >
             <span className="material-symbols-outlined">close</span>
@@ -477,14 +510,16 @@ export default function CardDetailsSheet({
                               {isIn ? '+' : '−'}
                               {isUnlocked ? (
                                 fx ? (
-                                  <span>
-                                    {formatForeignMovement(m.amountForeign)}{' '}
-                                    <span className="text-[0.65em] font-bold uppercase text-[#bcc9ce]">
-                                      {m.currency}
-                                    </span>
+                                  <span className="tabular-nums">
+                                    {formatForeignBalanceShort(m.amountForeign, m.currency)}
                                   </span>
                                 ) : (
-                                  <UzsAmount as="span" value={formatUzsMovement(m.amountUzs)} />
+                                  <UzsAmount
+                                    as="span"
+                                    compact
+                                    compactFrom={1000}
+                                    value={String(Math.round(Math.abs(m.amountUzs ?? 0)))}
+                                  />
                                 )
                               ) : (
                                 <span> •••••• {fx ? m.currency : 'UZS'}</span>
@@ -525,14 +560,16 @@ export default function CardDetailsSheet({
                             {isIn ? '+' : '−'}
                             {isUnlocked ? (
                               fx ? (
-                                <span>
-                                  {formatForeignMovement(m.amountForeign)}{' '}
-                                  <span className="text-[0.65em] font-bold uppercase text-[#bcc9ce]">
-                                    {m.currency}
-                                  </span>
+                                <span className="tabular-nums">
+                                  {formatForeignBalanceShort(m.amountForeign, m.currency)}
                                 </span>
                               ) : (
-                                <UzsAmount as="span" value={formatUzsMovement(m.amountUzs)} />
+                                <UzsAmount
+                                  as="span"
+                                  compact
+                                  compactFrom={1000}
+                                  value={String(Math.round(Math.abs(m.amountUzs ?? 0)))}
+                                />
                               )
                             ) : (
                               <span> •••••• {fx ? m.currency : 'UZS'}</span>

@@ -20,6 +20,16 @@ export function getRawMovementsForCard(card) {
     .slice(0, 100)
 }
 
+/** Базовые движения + операции по вкладам (сохраняются локально). */
+export function getMergedRawMovementsForCard(card, linkedByCardId = {}) {
+  if (!card) return []
+  const base = getRawMovementsForCard(card)
+  const extra = linkedByCardId[card.id] ?? []
+  return [...extra, ...base]
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+    .slice(0, 120)
+}
+
 export function withBalanceAfter(card, movements) {
   const balance = card.foreignCurrency ? (card.balanceForeign ?? 0) : (card.balanceUzs ?? 0)
   let running = balance
