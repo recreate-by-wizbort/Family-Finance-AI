@@ -572,7 +572,7 @@ export default function HomePage() {
       applyCardDelta(cardId, -d)
       const card =
         sourceCard ?? allUserCards.find((c) => c.id === cardId) ?? { id: cardId }
-      const mov = buildDepositOutMovement(card, d, 'Перевод')
+      const mov = buildDepositOutMovement(card, d, 'Исходящий перевод', 'Перевод')
       setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, cardId, mov))
     },
     [applyCardDelta, allUserCards],

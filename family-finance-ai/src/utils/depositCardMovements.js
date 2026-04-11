@@ -23,7 +23,7 @@ export function appendDepositCardMovement(prevByCardId, cardId, movement) {
   return next
 }
 
-export function buildDepositOutMovement(card, amountInCardCurrency, description) {
+export function buildDepositOutMovement(card, amountInCardCurrency, description, merchant = 'Вклад') {
   const id = `dcm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
   const ts = new Date().toISOString()
   if (card.foreignCurrency) {
@@ -33,7 +33,7 @@ export function buildDepositOutMovement(card, amountInCardCurrency, description)
       direction: 'out',
       amountForeign: Math.round(amountInCardCurrency * 100) / 100,
       currency: card.foreignCurrency,
-      merchant: 'Вклад',
+      merchant,
       description,
     }
   }
@@ -42,7 +42,7 @@ export function buildDepositOutMovement(card, amountInCardCurrency, description)
     timestamp: ts,
     direction: 'out',
     amountUzs: Math.round(amountInCardCurrency * 100) / 100,
-    merchant: 'Вклад',
+    merchant,
     description,
   }
 }

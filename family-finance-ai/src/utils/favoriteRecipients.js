@@ -35,17 +35,23 @@ const DEMO_SEED = [
 ]
 
 export function loadFavoriteRecipients() {
-  if (typeof window === 'undefined') return [...DEMO_SEED]
+  if (typeof window === 'undefined') return dedupeFavoriteRecipientsList([...DEMO_SEED])
   try {
     const raw = window.localStorage.getItem(KEY)
     if (!raw) {
-      window.localStorage.setItem(KEY, JSON.stringify(DEMO_SEED))
-      return [...DEMO_SEED]
+      const initial = dedupeFavoriteRecipientsList([...DEMO_SEED])
+      window.localStorage.setItem(KEY, JSON.stringify(initial))
+      return initial
     }
     const p = JSON.parse(raw)
-    return Array.isArray(p) ? p : [...DEMO_SEED]
+    let list = Array.isArray(p) ? p : [...DEMO_SEED]
+    const deduped = dedupeFavoriteRecipientsList(list)
+    if (deduped.length !== list.length) {
+      saveFavoriteRecipients(deduped)
+    }
+    return deduped
   } catch {
-    return [...DEMO_SEED]
+    return dedupeFavoriteRecipientsList([...DEMO_SEED])
   }
 }
 
@@ -64,6 +70,33 @@ function normCard(d) {
 
 function normPhone(d) {
   return String(d || '').replace(/\D/g, '').slice(0, 9)
+}
+
+/**
+ * Один контакт на уникальный номер карты (16 цифр) или телефона (9 цифр).
+ * Сохраняется первое вхождение в массиве.
+ */
+export function dedupeFavoriteRecipientsList(list) {
+  if (!Array.isArray(list)) return []
+  const seen = new Set()
+  const out = []
+  for (const row of list) {
+    if (!row || typeof row !== 'object') continue
+    let key = null
+    if (row.method === 'card') {
+      const c = normCard(row.cardDigits)
+      if (c.length === 16) key = `card:${c}`
+    } else if (row.method === 'phone') {
+      const p = normPhone(row.phoneDigits)
+      if (p.length === 9) key = `phone:${p}`
+    }
+    if (key) {
+      if (seen.has(key)) continue
+      seen.add(key)
+    }
+    out.push(row)
+  }
+  return out
 }
 
 /**
@@ -115,10 +148,36 @@ export function addFavoriteRecipient(entry) {
     ...(entry.image ? { image: entry.image } : {}),
     ...(entry.initials ? { initials: entry.initials } : {}),
   }
-  const next = [...list, row]
+  const next = dedupeFavoriteRecipientsList([...list, row])
   saveFavoriteRecipients(next)
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('family-finance-favorites-changed'))
   }
   return { list: next, added: true }
+}
+
+/**
+ * Удалить из избранного по номеру карты или телефона (все совпадения).
+ * @returns {{ list: object[], removed: boolean }}
+ */
+export function removeFavoriteRecipientByIdentifier({ method, cardDigits, phoneDigits }) {
+  const list = loadFavoriteRecipients()
+  let next
+  if (method === 'card') {
+    const c = normCard(cardDigits)
+    if (c.length !== 16) return { list, removed: false }
+    next = list.filter((row) => !(row.method === 'card' && normCard(row.cardDigits) === c))
+  } else if (method === 'phone') {
+    const p = normPhone(phoneDigits)
+    if (p.length !== 9) return { list, removed: false }
+    next = list.filter((row) => !(row.method === 'phone' && normPhone(row.phoneDigits) === p))
+  } else {
+    return { list, removed: false }
+  }
+  if (next.length === list.length) return { list, removed: false }
+  saveFavoriteRecipients(next)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('family-finance-favorites-changed'))
+  }
+  return { list: next, removed: true }
 }

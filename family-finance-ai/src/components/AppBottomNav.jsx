@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import ComingSoonSheet from './ComingSoonSheet'
 
 const tabs = [
   { id: 'home', label: 'Главная', icon: 'home', to: '/home' },
@@ -8,9 +10,15 @@ const tabs = [
   { id: 'services', label: 'Все сервисы', icon: 'apps', to: '/services' },
 ]
 
+const COMING_SOON_TAB_IDS = new Set(['pay', 'services'])
+
 export default function AppBottomNav({ activeTab, isUnlocked }) {
+  const [comingSoonOpen, setComingSoonOpen] = useState(false)
+  const [comingSoonTitle, setComingSoonTitle] = useState('')
+
   return (
-    <nav className="fixed bottom-0 z-50 flex w-full items-center justify-around rounded-t-[24px] bg-[#041329]/60 px-4 pb-6 pt-2 shadow-[0_-4px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
+    <>
+      <nav className="fixed bottom-0 z-[100] flex w-full items-center justify-around rounded-t-[24px] bg-[#041329]/60 px-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-2 shadow-[0_-4px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl sm:px-4">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab
 
@@ -24,6 +32,13 @@ export default function AppBottomNav({ activeTab, isUnlocked }) {
             }
             state={{ unlocked: isUnlocked }}
             to={tab.to}
+            onClick={(e) => {
+              if (COMING_SOON_TAB_IDS.has(tab.id)) {
+                e.preventDefault()
+                setComingSoonTitle(tab.label)
+                setComingSoonOpen(true)
+              }
+            }}
           >
             <span
               className="material-symbols-outlined"
@@ -35,6 +50,13 @@ export default function AppBottomNav({ activeTab, isUnlocked }) {
           </Link>
         )
       })}
-    </nav>
+      </nav>
+
+      <ComingSoonSheet
+        isOpen={comingSoonOpen}
+        title={comingSoonTitle}
+        onClose={() => setComingSoonOpen(false)}
+      />
+    </>
   )
 }

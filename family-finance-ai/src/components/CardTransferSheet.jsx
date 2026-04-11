@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CardSourceSelect from './CardSourceSelect'
 import { formatGroupedAmountInput, parseGroupedAmountString } from '../utils/amountInputFormat'
 import { validateLinkedCardPanForTransfer } from '../utils/cardBin'
-import { addFavoriteRecipient, isRecipientInFavorites } from '../utils/favoriteRecipients'
+import {
+  addFavoriteRecipient,
+  isRecipientInFavorites,
+  removeFavoriteRecipientByIdentifier,
+} from '../utils/favoriteRecipients'
 import { formatCardNumber, formatPhoneAfterPrefix } from '../utils/transferRecipientFormat'
 
 /** Вероятность имитации отказа банка (без списания средств). */
@@ -522,11 +526,14 @@ export default function CardTransferSheet({
               {transferOutcome.kind === 'success' ? (
                 <button
                   type="button"
-                  disabled={recipientAlreadyInFavorites}
+                  title={
+                    recipientAlreadyInFavorites
+                      ? 'Нажмите, чтобы убрать из избранного'
+                      : 'Добавить получателя в избранное'
+                  }
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    if (recipientAlreadyInFavorites) return
                     const m = transferOutcome.method
                     const payload = {
                       name: transferOutcome.recipientName,
@@ -534,18 +541,26 @@ export default function CardTransferSheet({
                       cardDigits: m === 'card' ? cardDigits : undefined,
                       phoneDigits: m === 'phone' ? phoneDigits : undefined,
                     }
-                    addFavoriteRecipient(payload)
+                    if (recipientAlreadyInFavorites) {
+                      removeFavoriteRecipientByIdentifier({
+                        method: m,
+                        cardDigits: m === 'card' ? cardDigits : undefined,
+                        phoneDigits: m === 'phone' ? phoneDigits : undefined,
+                      })
+                    } else {
+                      addFavoriteRecipient(payload)
+                    }
                     onAddToFavorites?.(payload)
                     setFavoritesRevision((n) => n + 1)
                   }}
-                  className={`mb-4 flex w-full items-center justify-between rounded-xl border border-[#1c2a41] px-4 py-3 text-left text-sm font-semibold transition-colors ${
+                  className={`mb-4 flex w-full items-center justify-center rounded-xl border border-[#1c2a41] px-4 py-3 text-center text-sm font-semibold transition-colors ${
                     recipientAlreadyInFavorites
-                      ? 'cursor-default bg-[#112036] text-[#869398]'
-                      : 'bg-[#0d1c32] text-[#4cd6fb] hover:bg-[#112036]'
+                      ? 'cursor-pointer bg-[#112036] text-[#869398] hover:bg-[#1c2a41] hover:text-[#bcc9ce]'
+                      : 'cursor-pointer bg-[#0d1c32] text-[#4cd6fb] hover:bg-[#112036]'
                   }`}
                 >
-                  <span className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#112036]">
+                  <span className="flex items-center justify-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#112036]">
                       <span
                         className="material-symbols-outlined text-[20px] text-[#4cd6fb]"
                         style={
@@ -559,9 +574,6 @@ export default function CardTransferSheet({
                     </span>
                     {recipientAlreadyInFavorites ? 'В избранном' : 'Добавить получателя'}
                   </span>
-                  {!recipientAlreadyInFavorites ? (
-                    <span className="material-symbols-outlined text-[#5c6b73]">chevron_right</span>
-                  ) : null}
                 </button>
               ) : null}
 

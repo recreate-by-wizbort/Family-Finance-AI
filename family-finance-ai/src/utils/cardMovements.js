@@ -44,3 +44,48 @@ export function withBalanceAfter(card, movements) {
     return row
   })
 }
+
+/** Та же выборка, что при поиске по всем картам в деталях: mock + локальные движения, общий таймлайн. */
+export function getAggregatedMovementRowsForAllCards(allUserCards, linkedMovementsByCardId, limit = null) {
+  const rows = []
+  for (const c of allUserCards) {
+    const raw = getMergedRawMovementsForCard(c, linkedMovementsByCardId)
+    for (const m of raw) {
+      rows.push({ card: c, movement: m })
+    }
+  }
+  rows.sort((a, b) => String(b.movement.timestamp).localeCompare(String(a.movement.timestamp)))
+  if (typeof limit === 'number' && limit > 0) {
+    return rows.slice(0, limit)
+  }
+  return rows
+}
+
+const rowKey = (row) => `${row.card.id}|${row.movement.id}`
+
+/**
+ * Превью на главном экране: сначала по одной свежей операции с каждой карты/счёта,
+ * затем добор по общему хронологическому списку — чтобы были видны разные источники.
+ */
+export function pickDiverseHistoryPreviewRows(sortedRows, maxCount = 3) {
+  if (!sortedRows?.length) return []
+  const picked = []
+  const seenKeys = new Set()
+  const cardIdsUsed = new Set()
+  for (const row of sortedRows) {
+    if (picked.length >= maxCount) break
+    const k = rowKey(row)
+    if (cardIdsUsed.has(row.card.id)) continue
+    picked.push(row)
+    seenKeys.add(k)
+    cardIdsUsed.add(row.card.id)
+  }
+  for (const row of sortedRows) {
+    if (picked.length >= maxCount) break
+    const k = rowKey(row)
+    if (seenKeys.has(k)) continue
+    picked.push(row)
+    seenKeys.add(k)
+  }
+  return picked
+}

@@ -107,6 +107,8 @@ export default function MovementDetailSheet({
   isUnlocked,
   onClose,
   onOpenMovement,
+  /** Поверх других шитов (например «Вся история») */
+  overlayZIndexClass = 'z-[120]',
 }) {
   const [isClosing, setIsClosing] = useState(false)
 
@@ -167,7 +169,9 @@ export default function MovementDetailSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4">
+    <div
+      className={`fixed inset-0 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 ${overlayZIndexClass}`}
+    >
       <button
         aria-label="Закрыть"
         className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${
