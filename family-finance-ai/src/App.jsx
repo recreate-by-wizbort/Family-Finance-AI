@@ -8,6 +8,7 @@ import CostPage from './pages/CostPage'
 import FamilyGroupPage from './pages/FamilyGroupPage'
 import GoalPage from './pages/GoalPage'
 import MonitoringPage from './pages/MonitoringPage'
+import AdviceAIPage from './pages/AdviceAIPage'
 import NotificationsPage from './pages/NotificationsPage'
 import PayPage from './pages/PayPage'
 import PreviewPage from './pages/PreviewPage'
@@ -80,6 +81,14 @@ function App() {
           element={
             <RequirePinRoute>
               <IncomePage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/advice-ai"
+          element={
+            <RequirePinRoute>
+              <AdviceAIPage />
             </RequirePinRoute>
           }
         />

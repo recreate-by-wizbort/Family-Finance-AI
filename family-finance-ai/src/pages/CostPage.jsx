@@ -1668,6 +1668,14 @@ export default function CostPage({
                 <span className="material-symbols-outlined text-[#4cd6fb]">track_changes</span>
               </button>
             </div>
+            <button
+              type="button"
+              className="mt-3 flex w-full items-center justify-between rounded-2xl bg-gradient-to-br from-[#4cd6fb] to-[#00b4d8] px-4 py-4 text-left text-base font-bold text-[#003642] shadow-[0_12px_30px_rgba(0,180,216,0.24)] transition hover:brightness-110 active:scale-[0.99]"
+              onClick={() => navigate('/advice-ai', { state: { from: '/monitoring' } })}
+            >
+              <span>Ваш персональный помощник AI</span>
+              <span className="material-symbols-outlined">smart_toy</span>
+            </button>
           </section>
         ) : null}
 
