@@ -1,17 +1,202 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import AppBottomNav from '../components/AppBottomNav.jsx'
+import SubpageCloseButton, { SUBPAGE_CLOSE_BUTTON_CLASS } from '../components/SubpageCloseButton.jsx'
 import AppTopBar from '../components/AppTopBar.jsx'
 import UzsAmount from '../components/UzsAmount.jsx'
 import {
   ACCOUNTS,
   CATEGORIES,
+  FAMILY_MEMBERS,
   LINKED_EXTERNAL_CARDS,
   PRIMARY_BANK_RECREATE,
   TRANSACTIONS,
 } from '../mockData.js'
 import { getPaymentCardsTotalUzs } from '../utils.js'
 import { isSessionUnlocked } from '../utils/sessionLock.js'
+
+const HISTORY_SHEET_ANIM_MS = 320
+const HISTORY_SHEET_SWIPE_CLOSE_PX = 100
+
+function ruOperationsCountLabel(n) {
+  const v = Math.abs(Number(n)) % 100
+  const v1 = v % 10
+  if (v > 10 && v < 20) return `${n} операций`
+  if (v1 === 1) return `${n} операция`
+  if (v1 >= 2 && v1 <= 4) return `${n} операции`
+  return `${n} операций`
+}
+
+function OperationsHistorySheet({ open, onClose, title, periodLabel, operations }) {
+  const [visible, setVisible] = useState(false)
+  const [animating, setAnimating] = useState(false)
+  const [dragOffset, setDragOffset] = useState(0)
+  const openAnimRafRef = useRef({ outer: 0, inner: 0 })
+  const sheetDragStartYRef = useRef(null)
+  const sheetDragOffsetRef = useRef(0)
+
+  useEffect(() => {
+    if (open) {
+      setVisible(true)
+      /** Всегда один кадр «закрыто», иначе переход не срабатывает при повторном открытии. */
+      setAnimating(false)
+      cancelAnimationFrame(openAnimRafRef.current.outer)
+      cancelAnimationFrame(openAnimRafRef.current.inner)
+      openAnimRafRef.current.outer = requestAnimationFrame(() => {
+        openAnimRafRef.current.inner = requestAnimationFrame(() => setAnimating(true))
+      })
+      return () => {
+        cancelAnimationFrame(openAnimRafRef.current.outer)
+        cancelAnimationFrame(openAnimRafRef.current.inner)
+      }
+    }
+    setAnimating(false)
+    const t = window.setTimeout(() => setVisible(false), HISTORY_SHEET_ANIM_MS)
+    return () => window.clearTimeout(t)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      setDragOffset(0)
+      sheetDragOffsetRef.current = 0
+      sheetDragStartYRef.current = null
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [open])
+
+  if (!visible || typeof document === 'undefined') {
+    return null
+  }
+
+  const periodText = /^\d{4}$/.test(String(periodLabel).trim()) ? `${periodLabel} год` : periodLabel
+
+  const sheetDragging = dragOffset > 0
+  const sheetTransform = !animating ? 'translateY(100%)' : `translateY(${dragOffset}px)`
+  const sheetTransitionMs = sheetDragging ? 0 : HISTORY_SHEET_ANIM_MS
+
+  const onSheetHeaderTouchStart = (e) => {
+    if (!animating) return
+    sheetDragStartYRef.current = e.touches[0].clientY
+  }
+
+  const onSheetHeaderTouchMove = (e) => {
+    if (sheetDragStartYRef.current == null || !animating) return
+    const y = e.touches[0].clientY
+    const dy = y - sheetDragStartYRef.current
+    if (dy > 0) {
+      sheetDragOffsetRef.current = dy
+      setDragOffset(dy)
+    }
+  }
+
+  const onSheetHeaderTouchEnd = () => {
+    if (sheetDragStartYRef.current == null) return
+    sheetDragStartYRef.current = null
+    const d = sheetDragOffsetRef.current
+    if (d >= HISTORY_SHEET_SWIPE_CLOSE_PX) {
+      sheetDragOffsetRef.current = 0
+      setDragOffset(0)
+      onClose()
+      return
+    }
+    sheetDragOffsetRef.current = 0
+    setDragOffset(0)
+  }
+
+  const sheet = (
+    <div className="fixed inset-0 z-[120] flex flex-col justify-end overscroll-none">
+      <div
+        aria-hidden
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity ${
+          animating ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{ transitionDuration: `${HISTORY_SHEET_ANIM_MS}ms` }}
+        onClick={onClose}
+      />
+      <div
+        className="relative z-10 flex max-h-[min(85dvh,720px)] min-h-0 w-full flex-col rounded-t-[28px] border-t border-[#3d494d] bg-[#010e24]/98 shadow-[0_-12px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+        style={{
+          transform: sheetTransform,
+          transitionProperty: 'transform',
+          transitionDuration: `${sheetTransitionMs}ms`,
+          transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
+      >
+        <div
+          className="shrink-0 select-none px-5 pt-4 touch-pan-y"
+          onTouchCancel={onSheetHeaderTouchEnd}
+          onTouchEnd={onSheetHeaderTouchEnd}
+          onTouchMove={onSheetHeaderTouchMove}
+          onTouchStart={onSheetHeaderTouchStart}
+        >
+          <div
+            aria-hidden
+            className="mx-auto mb-3 h-1 w-10 cursor-grab rounded-full bg-[#4cd6fb]/30 active:cursor-grabbing"
+          />
+          <div className="mb-4 flex min-h-[3.25rem] items-center justify-between gap-3">
+            <h3 className="line-clamp-2 min-w-0 flex-1 text-left font-headline text-2xl font-bold leading-tight text-[#d6e3ff] sm:text-3xl">
+              <span className="text-[#d6e3ff]">{title}</span>
+              <span className="font-semibold text-[#869398]"> — </span>
+              <span className="font-semibold text-[#bcc9ce]">{periodText}</span>
+            </h3>
+            <div className="shrink-0">
+              <SubpageCloseButton ariaLabel="Закрыть список операций" onClose={onClose} />
+            </div>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-8 [-webkit-overflow-scrolling:touch]">
+          {operations.length > 0 ? (
+            <div className="space-y-3">
+              {operations.map((operation) => {
+                const categoryMeta = CATEGORIES[operation.category] || {}
+                return (
+                  <div
+                    key={operation.id}
+                    className="flex items-center justify-between rounded-2xl bg-[#112036] px-4 py-3"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <p className="font-semibold text-[#d6e3ff]">{operation.merchant}</p>
+                      <p className="text-xs text-[#869398]">
+                        {categoryMeta.label || operation.category} · MCC {operation.mcc}
+                      </p>
+                    </div>
+                    <p
+                      className={`inline-flex shrink-0 items-baseline gap-0.5 font-semibold ${
+                        operation.direction === 'in' ? 'text-[#6ee7a8]' : 'text-[#ffb4ab]'
+                      }`}
+                    >
+                      <span className="shrink-0 select-none">{operation.direction === 'in' ? '+' : '−'}</span>
+                      <UzsAmount
+                        as="span"
+                        className="min-w-0"
+                        compact
+                        compactFrom={1_000_000}
+                        value={String(Math.round(operation.amountUzs))}
+                      />
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-[#112036] p-4 text-sm text-[#869398]">Нет операций для выбранного периода.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  return createPortal(sheet, document.body)
+}
 
 function toMonthLabel(monthKey) {
   const [year, month] = monthKey.split('-').map(Number)
@@ -99,6 +284,8 @@ function groupTransactionsByPeriod(transactions, periodMode) {
 function roundPercent(value) {
   return Math.round(value * 10) / 10
 }
+
+const FILTER_DROPDOWN_ANIM_MS = 200
 
 function pointOnCircle(cx, cy, radius, angleDeg) {
   const radians = ((angleDeg - 90) * Math.PI) / 180
@@ -201,9 +388,21 @@ const MONTH_SWITCH_DURATION_MS = 150
 
 const MONITORING_OWNER_ID = 'user_1'
 const MONITORING_PRIMARY_ACCOUNT_ID = 'acc_tbc_main'
+const FAMILY_MEMBER_IDS = FAMILY_MEMBERS.map((member) => member.id)
 
 /** Счета, вклады и привязанные карты владельца (как на /home) для фильтра диаграммы. */
-function getMonitoringAccountFilterOptions() {
+function getMonitoringAccountFilterOptions(filterByFamilyMember = false) {
+  if (filterByFamilyMember) {
+    return [
+      { id: 'all_members', label: 'Все участники', kind: 'family_all' },
+      ...FAMILY_MEMBERS.map((member) => ({
+        id: member.id,
+        label: member.name,
+        kind: 'family_member',
+      })),
+    ]
+  }
+
   const rows = [{ id: 'all', label: 'Все счета и карты' }]
   const mine = ACCOUNTS.filter((a) => a.userId === MONITORING_OWNER_ID)
 
@@ -229,7 +428,10 @@ function getMonitoringAccountFilterOptions() {
 }
 
 /** Какие accountId учитывать при выборе пункта (у привязанных карт в данных нет отдельного accountId — для банка Recreate берём основной счёт). */
-function resolveMonitoringAccountIds(filterId) {
+function resolveMonitoringAccountIds(filterId, filterByFamilyMember = false) {
+  if (filterByFamilyMember) {
+    return null
+  }
   if (filterId === 'all') {
     return null
   }
@@ -243,17 +445,28 @@ function resolveMonitoringAccountIds(filterId) {
   return [filterId]
 }
 
+function resolveMonitoringUserIds(filterId, filterByFamilyMember = false) {
+  if (!filterByFamilyMember) {
+    return [MONITORING_OWNER_ID]
+  }
+  if (filterId === 'all_members') {
+    return FAMILY_MEMBER_IDS
+  }
+  return FAMILY_MEMBER_IDS.includes(filterId) ? [filterId] : []
+}
+
 /**
  * null — все переводы в аналитике;
  * 'household' — «Без переводов в семье»: скрываем переводы себе (между своими счетами) и внутри семьи;
  * 'others' — «Без перевода другим людям»: скрываем P2P и переводы на «чужие» карты;
  * 'all' — «Без всех переводов»: скрываем любые transfer_*; цели, вклад, валюту и инвестиции оставляем.
  */
-function filterMonitoringExpenseTransactions(accountFilterId, transferExclusionMode) {
-  const accountIds = resolveMonitoringAccountIds(accountFilterId)
+function filterMonitoringExpenseTransactions(accountFilterId, transferExclusionMode, filterByFamilyMember = false) {
+  const accountIds = resolveMonitoringAccountIds(accountFilterId, filterByFamilyMember)
+  const allowedUserIds = resolveMonitoringUserIds(accountFilterId, filterByFamilyMember)
 
   return TRANSACTIONS.filter((transaction) => {
-    if (transaction.userId !== MONITORING_OWNER_ID) {
+    if (!allowedUserIds.includes(transaction.userId)) {
       return false
     }
     const purchaseOrSub = transaction.kind === 'purchase' || transaction.kind === 'subscription'
@@ -303,11 +516,12 @@ function filterMonitoringExpenseTransactions(accountFilterId, transferExclusionM
   })
 }
 
-function filterMonitoringAllTransactions(accountFilterId) {
-  const accountIds = resolveMonitoringAccountIds(accountFilterId)
+function filterMonitoringAllTransactions(accountFilterId, filterByFamilyMember = false) {
+  const accountIds = resolveMonitoringAccountIds(accountFilterId, filterByFamilyMember)
+  const allowedUserIds = resolveMonitoringUserIds(accountFilterId, filterByFamilyMember)
 
   return TRANSACTIONS.filter((transaction) => {
-    if (transaction.userId !== MONITORING_OWNER_ID) {
+    if (!allowedUserIds.includes(transaction.userId)) {
       return false
     }
     if (accountIds == null) {
@@ -324,11 +538,12 @@ function filterMonitoringAllTransactions(accountFilterId) {
  * Входящие для аналитики поступлений: те же правила скрытия переводов, что и для расходов
  * (дом / чужие / все), плюс только транзакции владельца и выбранных счетов.
  */
-function filterMonitoringIncomeTransactions(accountFilterId, transferExclusionMode) {
-  const accountIds = resolveMonitoringAccountIds(accountFilterId)
+function filterMonitoringIncomeTransactions(accountFilterId, transferExclusionMode, filterByFamilyMember = false) {
+  const accountIds = resolveMonitoringAccountIds(accountFilterId, filterByFamilyMember)
+  const allowedUserIds = resolveMonitoringUserIds(accountFilterId, filterByFamilyMember)
 
   return TRANSACTIONS.filter((transaction) => {
-    if (transaction.userId !== MONITORING_OWNER_ID) {
+    if (!allowedUserIds.includes(transaction.userId)) {
       return false
     }
     if (transaction.direction !== 'in') {
@@ -644,14 +859,27 @@ function buildRingMetricsFromSegments(segments, isUnlocked) {
   return rawMetrics
 }
 
-export default function CostPage({ mode = 'debit' }) {
+export default function CostPage({
+  mode = 'debit',
+  embedded = false,
+  embeddedInline = false,
+  filterByFamilyMember = false,
+  externalAccountFilterId = null,
+  externalAccountFilterToken = 0,
+  /** Родитель даёт `rounded-[32px] bg-[#0d1c32] p-6` — без второй «карточки» внутри. */
+  embeddedInlineContained = false,
+  onEmbeddedClose,
+}) {
   const isUnlocked = isSessionUnlocked()
   const navigate = useNavigate()
   const isMonitoringMode = mode === 'monitoring'
   const flowMode = mode === 'credit' ? 'credit' : 'debit'
 
-  const accountFilterOptions = useMemo(() => getMonitoringAccountFilterOptions(), [])
-  const [accountFilterId, setAccountFilterId] = useState('all')
+  const accountFilterOptions = useMemo(
+    () => getMonitoringAccountFilterOptions(filterByFamilyMember),
+    [filterByFamilyMember],
+  )
+  const [accountFilterId, setAccountFilterId] = useState(filterByFamilyMember ? 'all_members' : 'all')
   /**
    * null — все переводы в аналитике;
    * 'household' — без переводов себе и внутри семьи (по умолчанию);
@@ -662,8 +890,57 @@ export default function CostPage({ mode = 'debit' }) {
   const [periodMode, setPeriodMode] = useState('month')
   const [accountFilterMenuOpen, setAccountFilterMenuOpen] = useState(false)
   const [transferFilterMenuOpen, setTransferFilterMenuOpen] = useState(false)
+  const [accountFilterMenuMounted, setAccountFilterMenuMounted] = useState(false)
+  const [accountFilterMenuEntered, setAccountFilterMenuEntered] = useState(false)
+  const [transferFilterMenuMounted, setTransferFilterMenuMounted] = useState(false)
+  const [transferFilterMenuEntered, setTransferFilterMenuEntered] = useState(false)
+  const [historySheetOpen, setHistorySheetOpen] = useState(false)
   const accountFilterDropdownRef = useRef(null)
   const transferFilterDropdownRef = useRef(null)
+
+  useEffect(() => {
+    let closeTimer
+    let enterRaf1
+    let enterRaf2
+    if (accountFilterMenuOpen) {
+      enterRaf1 = requestAnimationFrame(() => {
+        setAccountFilterMenuMounted(true)
+        enterRaf2 = requestAnimationFrame(() => setAccountFilterMenuEntered(true))
+      })
+    } else {
+      enterRaf1 = requestAnimationFrame(() => {
+        setAccountFilterMenuEntered(false)
+        closeTimer = window.setTimeout(() => setAccountFilterMenuMounted(false), FILTER_DROPDOWN_ANIM_MS)
+      })
+    }
+    return () => {
+      window.clearTimeout(closeTimer)
+      if (enterRaf1 != null) cancelAnimationFrame(enterRaf1)
+      if (enterRaf2 != null) cancelAnimationFrame(enterRaf2)
+    }
+  }, [accountFilterMenuOpen])
+
+  useEffect(() => {
+    let closeTimer
+    let enterRaf1
+    let enterRaf2
+    if (transferFilterMenuOpen) {
+      enterRaf1 = requestAnimationFrame(() => {
+        setTransferFilterMenuMounted(true)
+        enterRaf2 = requestAnimationFrame(() => setTransferFilterMenuEntered(true))
+      })
+    } else {
+      enterRaf1 = requestAnimationFrame(() => {
+        setTransferFilterMenuEntered(false)
+        closeTimer = window.setTimeout(() => setTransferFilterMenuMounted(false), FILTER_DROPDOWN_ANIM_MS)
+      })
+    }
+    return () => {
+      window.clearTimeout(closeTimer)
+      if (enterRaf1 != null) cancelAnimationFrame(enterRaf1)
+      if (enterRaf2 != null) cancelAnimationFrame(enterRaf2)
+    }
+  }, [transferFilterMenuOpen])
 
   useEffect(() => {
     if (!accountFilterMenuOpen && !transferFilterMenuOpen) {
@@ -695,26 +972,48 @@ export default function CostPage({ mode = 'debit' }) {
 
   /** База категорий кольца: покупки/подписки при полном исключении переводов. */
   const expenseTransactionsNoTransfers = useMemo(
-    () => filterMonitoringExpenseTransactions(accountFilterId, 'all'),
-    [accountFilterId],
+    () => filterMonitoringExpenseTransactions(accountFilterId, 'all', filterByFamilyMember),
+    [accountFilterId, filterByFamilyMember],
   )
 
   const expenseTransactions = useMemo(
-    () => filterMonitoringExpenseTransactions(accountFilterId, transferExclusionMode),
-    [accountFilterId, transferExclusionMode],
+    () => filterMonitoringExpenseTransactions(accountFilterId, transferExclusionMode, filterByFamilyMember),
+    [accountFilterId, transferExclusionMode, filterByFamilyMember],
   )
 
   const incomeTransactions = useMemo(
-    () => filterMonitoringIncomeTransactions(accountFilterId, transferExclusionMode),
-    [accountFilterId, transferExclusionMode],
+    () => filterMonitoringIncomeTransactions(accountFilterId, transferExclusionMode, filterByFamilyMember),
+    [accountFilterId, transferExclusionMode, filterByFamilyMember],
   )
 
   const allMonitoringTransactions = useMemo(
-    () => filterMonitoringAllTransactions(accountFilterId),
-    [accountFilterId],
+    () => filterMonitoringAllTransactions(accountFilterId, filterByFamilyMember),
+    [accountFilterId, filterByFamilyMember],
   )
 
+  useEffect(() => {
+    const defaultFilter = filterByFamilyMember ? 'all_members' : 'all'
+    setAccountFilterId(defaultFilter)
+  }, [filterByFamilyMember])
+
   const [selectedPeriodKey, setSelectedPeriodKey] = useState(null)
+
+  useEffect(() => {
+    if (!isMonitoringMode || !externalAccountFilterId) {
+      return
+    }
+    if (!accountFilterOptions.some((option) => option.id === externalAccountFilterId)) {
+      return
+    }
+    setAccountFilterId(externalAccountFilterId)
+    setAccountFilterMenuOpen(false)
+    setSelectedPeriodKey(null)
+  }, [
+    accountFilterOptions,
+    externalAccountFilterId,
+    externalAccountFilterToken,
+    isMonitoringMode,
+  ])
 
   const groupedAllMonitoringByPeriod = useMemo(
     () => groupTransactionsByPeriod(allMonitoringTransactions, periodMode),
@@ -786,10 +1085,10 @@ export default function CostPage({ mode = 'debit' }) {
       const totalsCurrent = aggregateMonitoringOutflow(expenseTransactionsForPeriod)
       const totalsNoTf = aggregateMonitoringOutflow(transactionsNoTf)
       const totalsCredit = aggregateMonitoringInflow(incomeTransactionsForPeriod)
-      const cardBalance = getPaymentCardsTotalUzs(
-        MONITORING_OWNER_ID,
-        ACCOUNTS,
-        LINKED_EXTERNAL_CARDS,
+      const selectedUserIds = resolveMonitoringUserIds(accountFilterId, filterByFamilyMember)
+      const cardBalance = selectedUserIds.reduce(
+        (sum, userId) => sum + getPaymentCardsTotalUzs(userId, ACCOUNTS, LINKED_EXTERNAL_CARDS),
+        0,
       )
 
       const categoryUnion = new Set([
@@ -1043,7 +1342,7 @@ export default function CostPage({ mode = 'debit' }) {
         : 'up'
 
   const visibleSegments = isUnlocked ? chartSegments : []
-  const recentOperations = isUnlocked
+  const historyOperations = isUnlocked
     ? [...currentPeriodTransactions]
         .filter((transaction) =>
           isMonitoringMode
@@ -1053,8 +1352,13 @@ export default function CostPage({ mode = 'debit' }) {
               : transaction.direction === 'in',
         )
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-        .slice(0, 6)
     : []
+
+  const historySectionTitle = 'Операции'
+
+  useEffect(() => {
+    setHistorySheetOpen(false)
+  }, [selectedPeriodIndex])
 
   const debitMiniBar = useMemo(
     () =>
@@ -1090,6 +1394,10 @@ export default function CostPage({ mode = 'debit' }) {
     }
     return snap.debitMetrics ?? []
   }
+
+  /** Ужатый вид только в нижнем листе; на /family — те же отступы, что у полной страницы. */
+  const sheetTightEmbed = Boolean(embedded && !embeddedInline)
+  const familyShellEmbed = Boolean(embedded && embeddedInline && embeddedInlineContained)
 
   const transitionEase = useSwipeNavigation ? 'cubic-bezier(0.78, 0.02, 0.96, 0.32)' : 'linear'
   const sidePreviewShift = ringTransition?.active ? ringTransition.direction * 74 : 0
@@ -1223,80 +1531,68 @@ export default function CostPage({ mode = 'debit' }) {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#041329] pb-32 text-[#d6e3ff]" style={{ minHeight: '100dvh' }}>
-      <AppTopBar />
+    <div
+      className={
+        embedded
+          ? 'w-full min-w-0 min-h-0 text-[#d6e3ff]'
+          : 'min-h-screen overflow-x-hidden bg-[#041329] pb-32 text-[#d6e3ff]'
+      }
+      style={embedded ? undefined : { minHeight: '100dvh' }}
+    >
+      {!embedded ? <AppTopBar /> : null}
 
-      <main className="mx-auto mt-20 max-w-5xl px-6 pb-32">
+      <main
+        className={
+          embeddedInline
+            ? embeddedInlineContained
+              ? 'mx-auto w-full max-w-full px-0 pb-0 pt-0'
+              : 'mx-auto w-full max-w-full px-0 pb-8 pt-0'
+            : embedded
+              ? 'mx-auto max-w-5xl px-4 pb-8 pt-1'
+              : 'mx-auto mt-20 max-w-5xl px-6 pb-32'
+        }
+      >
         {!isUnlocked ? (
           <div className="mb-6 rounded-2xl border border-[#4cd6fb]/20 bg-[#112036]/80 px-4 py-3 text-center text-xs uppercase tracking-[0.18em] text-[#bcc9ce]">
             Аналитика скрыта до разблокировки
           </div>
         ) : null}
 
-        <section className="mb-8">
-          <div className="mb-2 flex items-start justify-between gap-3 font-headline text-3xl font-extrabold leading-tight tracking-tight text-[#d6e3ff]">
-            <h1 className="min-w-0 flex-1">
-              {isMonitoringMode ? 'Мониторинг' : flowMode === 'debit' ? 'Затраты' : 'Поступления'}
-            </h1>
-            {!isMonitoringMode ? (
-              <button
-                aria-label="Закрыть и вернуться к мониторингу"
-                className="flex h-[1cap] w-[1cap] min-h-8 min-w-8 shrink-0 items-center justify-center rounded-full border-2 border-[#4cd6fb]/55 bg-[#112036] text-[#d6e3ff] shadow-[0_0_0_1px_rgba(76,214,251,0.15),0_4px_16px_rgba(76,214,251,0.22),inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#58d6f1] hover:bg-[#1c2a41] hover:shadow-[0_0_0_1px_rgba(88,214,241,0.3),0_6px_22px_rgba(76,214,251,0.32)] active:scale-95"
-                type="button"
-                onClick={() => navigate('/monitoring')}
-              >
-                <span
-                  className="material-symbols-outlined leading-none text-[#4cd6fb]"
-                  style={{
-                    fontSize: 'min(0.62cap, 1.35rem)',
-                    fontVariationSettings: '"FILL" 0, "wght" 600',
-                  }}
-                >
-                  close
-                </span>
-              </button>
-            ) : null}
-          </div>
-          <p className="text-sm font-normal text-[#bcc9ce]">
-            {isMonitoringMode
-              ? 'Диаграмма расходов и доходов с категориями, остатком на карте и операциями'
-              : flowMode === 'debit'
-              ? 'Динамика трат по месяцам с категориями и историей операций'
-              : 'Динамика поступлений по месяцам с категориями и историей операций'}
-          </p>
-        </section>
+        {!embedded ? (
+          <section className="mb-8">
+            <div className="mb-2 flex items-center justify-between gap-3 font-headline text-3xl font-extrabold leading-tight tracking-tight text-[#d6e3ff]">
+              <h1 className="min-w-0 flex-1">
+                {isMonitoringMode ? 'Мониторинг' : flowMode === 'debit' ? 'Затраты' : 'Поступления'}
+              </h1>
+              {!isMonitoringMode ? (
+                <SubpageCloseButton />
+              ) : null}
+            </div>
+            <p className="text-sm font-normal text-[#bcc9ce]">
+              {isMonitoringMode
+                ? 'Диаграмма расходов и доходов с категориями, остатком на карте и операциями'
+                : flowMode === 'debit'
+                  ? 'Динамика трат по месяцам с категориями и историей операций'
+                  : 'Динамика поступлений по месяцам с категориями и историей операций'}
+            </p>
+          </section>
+        ) : null}
 
-        {isMonitoringMode ? (
+        {embedded && !embeddedInline && isMonitoringMode && typeof onEmbeddedClose === 'function' ? (
+          <section className="mb-5">
+            <div className="mb-2 flex items-center justify-between gap-3 font-headline text-2xl font-extrabold leading-tight tracking-tight text-[#d6e3ff] sm:text-3xl">
+              <h2 className="min-w-0 flex-1">Аналитика вкладов</h2>
+              <SubpageCloseButton ariaLabel="Закрыть" onClose={onEmbeddedClose} />
+            </div>
+            <p className="text-sm font-normal text-[#bcc9ce]">
+              Диаграмма расходов и доходов с категориями, остатком на карте и операциями
+            </p>
+          </section>
+        ) : null}
+
+        {isMonitoringMode && !embedded ? (
           <section className="mb-5 grid gap-3">
             <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/cost')}
-                className="min-w-0 overflow-hidden rounded-2xl bg-[#0d1c32] px-3 py-3 text-left transition hover:bg-[#112036] active:scale-[0.99] sm:px-4 sm:py-3.5"
-              >
-                <div className="min-w-0 text-xl font-extrabold leading-tight tracking-tight text-[#d6e3ff] sm:text-2xl">
-                  <UzsAmount
-                    as="span"
-                    className="block min-w-0 break-words"
-                    compact
-                    compactFrom={1_000_000}
-                    value={String(Math.round(selectedSnapshot.debitTotal))}
-                  />
-                </div>
-                <div className="mt-2 text-base font-semibold text-[#d6e3ff] sm:text-[1.05rem]">Затраты</div>
-                <div className="mt-2.5 flex h-3.5 w-full min-w-0 overflow-hidden rounded-full sm:h-4">
-                  {debitMiniBar.map((segment) => (
-                    <span
-                      key={`mini-debit-${segment.category}`}
-                      style={{
-                        backgroundColor: segment.color,
-                        width: `${segment.fillPct}%`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </button>
-
               <button
                 type="button"
                 onClick={() => navigate('/income')}
@@ -1324,12 +1620,41 @@ export default function CostPage({ mode = 'debit' }) {
                   ))}
                 </div>
               </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/cost')}
+                className="min-w-0 overflow-hidden rounded-2xl bg-[#0d1c32] px-3 py-3 text-left transition hover:bg-[#112036] active:scale-[0.99] sm:px-4 sm:py-3.5"
+              >
+                <div className="min-w-0 text-xl font-extrabold leading-tight tracking-tight text-[#d6e3ff] sm:text-2xl">
+                  <UzsAmount
+                    as="span"
+                    className="block min-w-0 break-words"
+                    compact
+                    compactFrom={1_000_000}
+                    value={String(Math.round(selectedSnapshot.debitTotal))}
+                  />
+                </div>
+                <div className="mt-2 text-base font-semibold text-[#d6e3ff] sm:text-[1.05rem]">Затраты</div>
+                <div className="mt-2.5 flex h-3.5 w-full min-w-0 overflow-hidden rounded-full sm:h-4">
+                  {debitMiniBar.map((segment) => (
+                    <span
+                      key={`mini-debit-${segment.category}`}
+                      style={{
+                        backgroundColor: segment.color,
+                        width: `${segment.fillPct}%`,
+                      }}
+                    />
+                  ))}
+                </div>
+              </button>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 className="flex items-center justify-between rounded-2xl bg-[#0d1c32] px-4 py-4 text-left text-base font-bold text-[#d6e3ff] transition hover:bg-[#112036]"
+                onClick={() => navigate('/family')}
               >
                 <span>Семейная группа</span>
                 <span className="material-symbols-outlined text-[#4cd6fb]">family_restroom</span>
@@ -1337,6 +1662,7 @@ export default function CostPage({ mode = 'debit' }) {
               <button
                 type="button"
                 className="flex items-center justify-between rounded-2xl bg-[#0d1c32] px-4 py-4 text-left text-base font-bold text-[#d6e3ff] transition hover:bg-[#112036]"
+                onClick={() => navigate('/goal')}
               >
                 <span>Цель</span>
                 <span className="material-symbols-outlined text-[#4cd6fb]">track_changes</span>
@@ -1345,12 +1671,20 @@ export default function CostPage({ mode = 'debit' }) {
           </section>
         ) : null}
 
-        <section className="mb-8 rounded-[32px] bg-[#0d1c32] p-6 md:p-8">
+        <section
+          className={
+            familyShellEmbed
+              ? 'mb-0 bg-transparent p-0'
+              : sheetTightEmbed
+                ? 'mb-6 rounded-2xl bg-[#0d1c32] p-4 md:p-5'
+                : 'mb-8 rounded-[32px] bg-[#0d1c32] p-6 md:p-8'
+          }
+        >
           {isUnlocked ? (
             <div className="mb-5 grid max-w-[min(100%,26rem)] grid-cols-2 gap-2.5 sm:mb-6">
               <div ref={accountFilterDropdownRef} className="relative min-w-0">
                 <label className="sr-only" htmlFor="monitoring-account-filter-trigger">
-                  Счета и карты
+                  {filterByFamilyMember ? 'Участник семейной группы' : 'Счета и карты'}
                 </label>
                 <button
                   aria-controls="monitoring-account-filter-listbox"
@@ -1365,7 +1699,8 @@ export default function CostPage({ mode = 'debit' }) {
                   }}
                 >
                   <span className="min-w-0 flex-1 truncate">
-                    {accountFilterOptions.find((o) => o.id === accountFilterId)?.label ?? 'Счёт'}
+                    {accountFilterOptions.find((o) => o.id === accountFilterId)?.label ??
+                      (filterByFamilyMember ? 'Участник' : 'Счёт')}
                   </span>
                   <span
                     aria-hidden
@@ -1377,37 +1712,45 @@ export default function CostPage({ mode = 'debit' }) {
                     expand_more
                   </span>
                 </button>
-                {accountFilterMenuOpen ? (
-                  <ul
-                    className="absolute left-0 top-[calc(100%+0.375rem)] z-50 max-h-[min(20rem,50vh)] w-[calc(200%+0.625rem-2.75rem)] max-w-[min(calc(200%+0.625rem-2.75rem),calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-white/12 bg-[#0f1828]/92 py-1 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-[#0f1828]/78"
-                    id="monitoring-account-filter-listbox"
-                    role="listbox"
+                {accountFilterMenuMounted ? (
+                  <div
+                    className={`absolute left-0 top-[calc(100%+0.375rem)] z-50 w-[calc(200%+0.625rem-2.75rem)] max-w-[min(calc(200%+0.625rem-2.75rem),calc(100vw-2rem))] isolate origin-top overflow-hidden rounded-2xl border border-white/12 bg-[#0f1828]/92 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform] supports-[backdrop-filter]:bg-[#0f1828]/78 ${
+                      accountFilterMenuEntered
+                        ? 'pointer-events-auto translate-y-0 scale-100 opacity-100'
+                        : 'pointer-events-none -translate-y-1 scale-[0.98] opacity-0'
+                    }`}
                   >
-                    {accountFilterOptions.map((option) => {
-                      const selected = option.id === accountFilterId
-                      return (
-                        <li key={option.id} role="presentation">
-                          <button
-                            aria-selected={selected}
-                            className={`flex w-full items-center px-3 py-2.5 text-left text-sm transition-colors ${
-                              selected
-                                ? 'bg-[#4cd6fb]/22 text-[#eaf8ff]'
-                                : 'text-[#d6e3ff] hover:bg-white/5'
-                            }`}
-                            role="option"
-                            type="button"
-                            onClick={() => {
-                              setAccountFilterId(option.id)
-                              setAccountFilterMenuOpen(false)
-                              setSelectedPeriodKey(null)
-                            }}
-                          >
-                            <span className="truncate">{option.label}</span>
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                    <ul
+                      className="m-0 max-h-[min(20rem,50vh)] list-none overflow-y-auto overscroll-contain py-0"
+                      id="monitoring-account-filter-listbox"
+                      role="listbox"
+                    >
+                      {accountFilterOptions.map((option) => {
+                        const selected = option.id === accountFilterId
+                        return (
+                          <li key={option.id} className="m-0 p-0" role="presentation">
+                            <button
+                              aria-selected={selected}
+                              className={`flex w-full items-center px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
+                                selected
+                                  ? 'bg-[#4cd6fb]/22 text-[#eaf8ff]'
+                                  : 'text-[#d6e3ff] hover:bg-white/5'
+                              }`}
+                              role="option"
+                              type="button"
+                              onClick={() => {
+                                setAccountFilterId(option.id)
+                                setAccountFilterMenuOpen(false)
+                                setSelectedPeriodKey(null)
+                              }}
+                            >
+                              <span className="truncate">{option.label}</span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
                 ) : null}
               </div>
               <div ref={transferFilterDropdownRef} className="relative min-w-0">
@@ -1464,18 +1807,25 @@ export default function CostPage({ mode = 'debit' }) {
                     </button>
                   ) : null}
                 </div>
-                {transferFilterMenuOpen ? (
-                  <ul
-                    className="absolute right-0 top-[calc(100%+0.375rem)] z-50 m-0 w-[min(100%,18rem)] list-none overflow-hidden rounded-2xl border border-white/12 bg-[#0f1828]/92 p-0 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-[#0f1828]/78"
-                    id="monitoring-transfer-filter-listbox"
-                    role="listbox"
+                {transferFilterMenuMounted ? (
+                  <div
+                    className={`absolute right-0 top-[calc(100%+0.375rem)] z-50 w-[min(100%,18rem)] isolate origin-top-right overflow-hidden rounded-2xl border border-white/12 bg-[#0f1828]/92 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform] supports-[backdrop-filter]:bg-[#0f1828]/78 ${
+                      transferFilterMenuEntered
+                        ? 'pointer-events-auto translate-y-0 scale-100 opacity-100'
+                        : 'pointer-events-none -translate-y-1 scale-[0.98] opacity-0'
+                    }`}
                   >
+                    <ul
+                      className="m-0 max-h-[min(20rem,50vh)] list-none overflow-y-auto overscroll-contain py-0"
+                      id="monitoring-transfer-filter-listbox"
+                      role="listbox"
+                    >
                     <li className="m-0 p-0" role="presentation">
                       <button
                         aria-selected={transferExclusionMode === 'household'}
-                        className={`flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
+                        className={`flex w-full items-start px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
                           transferExclusionMode === 'household'
-                            ? 'bg-amber-500/35 text-white'
+                            ? 'bg-[#4cd6fb]/22 text-[#eaf8ff]'
                             : 'text-[#d6e3ff] hover:bg-white/5'
                         }`}
                         role="option"
@@ -1486,17 +1836,6 @@ export default function CostPage({ mode = 'debit' }) {
                           setSelectedPeriodKey(null)
                         }}
                       >
-                        {transferExclusionMode === 'household' ? (
-                          <span
-                            aria-hidden
-                            className="material-symbols-outlined mt-0.5 shrink-0 text-lg text-amber-200"
-                            style={{ fontVariationSettings: '"FILL" 1' }}
-                          >
-                            check
-                          </span>
-                        ) : (
-                          <span aria-hidden className="inline-block w-6 shrink-0" />
-                        )}
                         <span className="min-w-0 flex-1">
                           <span className="block">Без переводов</span>
                           <span className="block text-[0.92em] opacity-90">в семье</span>
@@ -1506,9 +1845,9 @@ export default function CostPage({ mode = 'debit' }) {
                     <li className="m-0 p-0" role="presentation">
                       <button
                         aria-selected={transferExclusionMode === 'others'}
-                        className={`flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
+                        className={`flex w-full items-start px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
                           transferExclusionMode === 'others'
-                            ? 'bg-amber-500/35 text-white'
+                            ? 'bg-[#4cd6fb]/22 text-[#eaf8ff]'
                             : 'text-[#d6e3ff] hover:bg-white/5'
                         }`}
                         role="option"
@@ -1519,17 +1858,6 @@ export default function CostPage({ mode = 'debit' }) {
                           setSelectedPeriodKey(null)
                         }}
                       >
-                        {transferExclusionMode === 'others' ? (
-                          <span
-                            aria-hidden
-                            className="material-symbols-outlined mt-0.5 shrink-0 text-lg text-amber-200"
-                            style={{ fontVariationSettings: '"FILL" 1' }}
-                          >
-                            check
-                          </span>
-                        ) : (
-                          <span aria-hidden className="inline-block w-6 shrink-0" />
-                        )}
                         <span className="min-w-0 flex-1">
                           <span className="block">Без перевода</span>
                           <span className="block text-[0.92em] opacity-90">другим людям</span>
@@ -1539,9 +1867,9 @@ export default function CostPage({ mode = 'debit' }) {
                     <li className="m-0 p-0" role="presentation">
                       <button
                         aria-selected={transferExclusionMode === 'all'}
-                        className={`flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
+                        className={`flex w-full items-start px-3 py-2.5 text-left text-sm leading-snug transition-colors ${
                           transferExclusionMode === 'all'
-                            ? 'bg-amber-500/35 text-white'
+                            ? 'bg-[#4cd6fb]/22 text-[#eaf8ff]'
                             : 'text-[#d6e3ff] hover:bg-white/5'
                         }`}
                         role="option"
@@ -1552,24 +1880,14 @@ export default function CostPage({ mode = 'debit' }) {
                           setSelectedPeriodKey(null)
                         }}
                       >
-                        {transferExclusionMode === 'all' ? (
-                          <span
-                            aria-hidden
-                            className="material-symbols-outlined mt-0.5 shrink-0 text-lg text-amber-200"
-                            style={{ fontVariationSettings: '"FILL" 1' }}
-                          >
-                            check
-                          </span>
-                        ) : (
-                          <span aria-hidden className="inline-block w-6 shrink-0" />
-                        )}
                         <span className="min-w-0 flex-1">
                           <span className="block">Без всех</span>
                           <span className="block text-[0.92em] opacity-90">переводов</span>
                         </span>
                       </button>
                     </li>
-                  </ul>
+                    </ul>
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -1705,7 +2023,7 @@ export default function CostPage({ mode = 'debit' }) {
                 : null}
             </div>
 
-            <div className="mb-3 flex min-w-0 flex-wrap items-end justify-center gap-2 sm:gap-2.5 md:gap-3">
+            <div className="mb-3 flex min-w-0 flex-wrap items-end justify-center gap-4 sm:gap-5 md:gap-6">
               <h2 className="min-w-0 max-w-full text-center text-4xl font-extrabold leading-none tracking-tight text-[#d6e3ff] sm:text-5xl md:text-5xl lg:text-6xl">
                 <UzsAmount
                   as="span"
@@ -1772,14 +2090,28 @@ export default function CostPage({ mode = 'debit' }) {
             </div>
 
             {isMonitoringMode ? (
-              <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
-                <span className="rounded-full border border-[#4cd6fb]/30 bg-[#4cd6fb]/10 px-3 py-1 text-xs font-semibold text-[#8de4ff]">
-                  Поступления:{' '}
-                  <UzsAmount as="span" compact compactFrom={1_000_000} value={String(Math.round(selectedSnapshot.creditTotal))} />
+              <div className="mb-3 grid w-full min-w-0 grid-cols-2 items-stretch gap-2">
+                <span className="flex min-w-0 items-center justify-center rounded-full border border-[#58d6f1]/30 bg-[#58d6f1]/10 px-2 py-1 text-center text-[11px] font-semibold leading-tight text-[#9cecff] sm:px-3 sm:text-xs">
+                  <span className="min-w-0 whitespace-normal break-words">
+                    Затраты:{' '}
+                    <UzsAmount
+                      as="span"
+                      compact
+                      compactFrom={1_000_000}
+                      value={String(Math.round(selectedSnapshot.debitTotal))}
+                    />
+                  </span>
                 </span>
-                <span className="rounded-full border border-[#58d6f1]/30 bg-[#58d6f1]/10 px-3 py-1 text-xs font-semibold text-[#9cecff]">
-                  Затраты:{' '}
-                  <UzsAmount as="span" compact compactFrom={1_000_000} value={String(Math.round(selectedSnapshot.debitTotal))} />
+                <span className="flex min-w-0 items-center justify-center rounded-full border border-[#4cd6fb]/30 bg-[#4cd6fb]/10 px-2 py-1 text-center text-[11px] font-semibold leading-tight text-[#8de4ff] sm:px-3 sm:text-xs">
+                  <span className="min-w-0 whitespace-normal break-words">
+                    Поступления:{' '}
+                    <UzsAmount
+                      as="span"
+                      compact
+                      compactFrom={1_000_000}
+                      value={String(Math.round(selectedSnapshot.creditTotal))}
+                    />
+                  </span>
                 </span>
               </div>
             ) : null}
@@ -1844,7 +2176,7 @@ export default function CostPage({ mode = 'debit' }) {
                         className="inline-flex items-baseline leading-none"
                         compact
                         compactFrom={1_000_000}
-                        currencyClassName="ml-0.5 inline-block shrink-0 align-baseline text-[0.52em] font-semibold uppercase tracking-wide text-[#aab8ce] sm:text-[0.55em]"
+                        currencyClassName="inline-block shrink-0 align-baseline font-semibold uppercase tracking-[0.12em] text-[#aab8ce]"
                         value={String(Math.round(segment.amount))}
                       />
                     </div>
@@ -1855,55 +2187,63 @@ export default function CostPage({ mode = 'debit' }) {
           ) : null}
         </section>
 
-        <section className="rounded-[32px] bg-[#0d1c32] p-6 md:p-8">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl font-bold">
-              {isMonitoringMode
-                ? 'История трат и пополнений'
-                : flowMode === 'debit'
-                  ? 'История трат'
-                  : 'История пополнений'}
-            </h2>
-            <span className="text-xs uppercase tracking-[0.14em] text-[#869398]">{periodLabel}</span>
+        <section
+          className={
+            familyShellEmbed
+              ? 'mt-8 border-t border-white/10 bg-transparent p-0 pt-8'
+              : sheetTightEmbed
+                ? 'rounded-2xl bg-[#0d1c32] p-4 md:p-5'
+                : 'rounded-[32px] bg-[#0d1c32] p-6 md:p-8'
+          }
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0 flex-1 pr-1">
+              <h2 className="text-xl font-bold text-[#d6e3ff]">{historySectionTitle}</h2>
+              <p className="mt-2 text-sm leading-snug text-[#869398]">
+                <span className="text-xs uppercase tracking-[0.14em]">{periodLabel}</span>
+                {isUnlocked ? (
+                  <>
+                    {' '}
+                    ·{' '}
+                    {historyOperations.length > 0
+                      ? ruOperationsCountLabel(historyOperations.length)
+                      : 'нет операций'}
+                  </>
+                ) : (
+                  <> · Операции скрыты до разблокировки</>
+                )}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!isUnlocked}
+              aria-label={isUnlocked ? 'Открыть список операций' : 'Операции недоступны'}
+              className={`${SUBPAGE_CLOSE_BUTTON_CLASS} shrink-0 self-center disabled:pointer-events-none disabled:opacity-40`}
+              onClick={() => setHistorySheetOpen(true)}
+            >
+              <span
+                className="material-symbols-outlined leading-none text-[#4cd6fb]"
+                style={{
+                  fontSize: 'clamp(1.625rem, 4.2vw, 1.875rem)',
+                  fontVariationSettings: '"FILL" 0, "wght" 600',
+                }}
+              >
+                arrow_forward
+              </span>
+            </button>
           </div>
-
-          {recentOperations.length > 0 ? (
-            <div className="space-y-3">
-              {recentOperations.map((operation) => {
-                const categoryMeta = CATEGORIES[operation.category] || {}
-
-                return (
-                  <div
-                    key={operation.id}
-                    className="flex items-center justify-between rounded-2xl bg-[#112036] px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-semibold text-[#d6e3ff]">{operation.merchant}</p>
-                      <p className="text-xs text-[#869398]">
-                        {categoryMeta.label || operation.category} · MCC {operation.mcc}
-                      </p>
-                    </div>
-                    <p className="font-semibold text-[#d6e3ff]">
-                      <UzsAmount
-                        as="span"
-                        compact
-                        compactFrom={1_000_000}
-                        value={`${operation.direction === 'in' ? '+' : '-'} ${Math.round(operation.amountUzs)}`}
-                      />
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="rounded-2xl bg-[#112036] p-4 text-sm text-[#869398]">
-              Нет операций для выбранного периода.
-            </div>
-          )}
         </section>
       </main>
 
-      <AppBottomNav activeTab="monitoring" isUnlocked={isUnlocked} />
+      {!embedded ? <AppBottomNav activeTab="monitoring" isUnlocked={isUnlocked} /> : null}
+
+      <OperationsHistorySheet
+        open={historySheetOpen}
+        onClose={() => setHistorySheetOpen(false)}
+        title={historySectionTitle}
+        periodLabel={periodLabel}
+        operations={historyOperations}
+      />
     </div>
   )
 }

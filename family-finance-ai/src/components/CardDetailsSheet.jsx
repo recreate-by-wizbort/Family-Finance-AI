@@ -100,7 +100,7 @@ export default function CardDetailsSheet({ card, isOpen, onClose, isUnlocked }) 
       <div
         aria-labelledby="card-sheet-title"
         aria-modal="true"
-        className="relative z-10 flex h-[min(78dvh,640px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(78dvh,680px)] sm:max-w-lg sm:rounded-3xl"
+        className="relative z-10 flex h-[min(85dvh,640px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-3xl"
         role="dialog"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-[#1c2a41] px-5 py-4">

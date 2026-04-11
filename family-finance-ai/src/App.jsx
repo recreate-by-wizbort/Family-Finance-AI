@@ -5,6 +5,8 @@ import HomePage from './pages/HomePage'
 import IncomePage from './pages/IncomePage'
 import MobileEntryPage from './pages/MobileEntryPage'
 import CostPage from './pages/CostPage'
+import FamilyGroupPage from './pages/FamilyGroupPage'
+import GoalPage from './pages/GoalPage'
 import MonitoringPage from './pages/MonitoringPage'
 import NotificationsPage from './pages/NotificationsPage'
 import PayPage from './pages/PayPage'
@@ -46,6 +48,22 @@ function App() {
           element={
             <RequirePinRoute>
               <MonitoringPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/family"
+          element={
+            <RequirePinRoute>
+              <FamilyGroupPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/goal"
+          element={
+            <RequirePinRoute>
+              <GoalPage />
             </RequirePinRoute>
           }
         />
