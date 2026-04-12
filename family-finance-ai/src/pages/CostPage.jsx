@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import AppBottomNav from '../components/AppBottomNav.jsx'
 import SubpageCloseButton, { SUBPAGE_CLOSE_BUTTON_CLASS } from '../components/SubpageCloseButton.jsx'
 import AppTopBar from '../components/AppTopBar.jsx'
+import MovementDetailSheet from '../components/MovementDetailSheet.jsx'
 import UzsAmount from '../components/UzsAmount.jsx'
 import {
   ACCOUNTS,
@@ -13,6 +14,9 @@ import {
   PRIMARY_BANK_RECREATE,
   TRANSACTIONS,
 } from '../mockData.js'
+import { last4FromPan } from '../utils/buildHomeUserCardsList.js'
+import { getMergedRawMovementsForCard, withBalanceAfter } from '../utils/cardMovements.js'
+import { loadDepositCardMovements } from '../utils/depositCardMovements.js'
 import { getPaymentCardsTotalUzs } from '../utils.js'
 import { isSessionUnlocked } from '../utils/sessionLock.js'
 
@@ -26,176 +30,6 @@ function ruOperationsCountLabel(n) {
   if (v1 === 1) return `${n} операция`
   if (v1 >= 2 && v1 <= 4) return `${n} операции`
   return `${n} операций`
-}
-
-function OperationsHistorySheet({ open, onClose, title, periodLabel, operations }) {
-  const [visible, setVisible] = useState(false)
-  const [animating, setAnimating] = useState(false)
-  const [dragOffset, setDragOffset] = useState(0)
-  const openAnimRafRef = useRef({ outer: 0, inner: 0 })
-  const sheetDragStartYRef = useRef(null)
-  const sheetDragOffsetRef = useRef(0)
-
-  useEffect(() => {
-    if (open) {
-      setVisible(true)
-      /** Всегда один кадр «закрыто», иначе переход не срабатывает при повторном открытии. */
-      setAnimating(false)
-      cancelAnimationFrame(openAnimRafRef.current.outer)
-      cancelAnimationFrame(openAnimRafRef.current.inner)
-      openAnimRafRef.current.outer = requestAnimationFrame(() => {
-        openAnimRafRef.current.inner = requestAnimationFrame(() => setAnimating(true))
-      })
-      return () => {
-        cancelAnimationFrame(openAnimRafRef.current.outer)
-        cancelAnimationFrame(openAnimRafRef.current.inner)
-      }
-    }
-    setAnimating(false)
-    const t = window.setTimeout(() => setVisible(false), HISTORY_SHEET_ANIM_MS)
-    return () => window.clearTimeout(t)
-  }, [open])
-
-  useEffect(() => {
-    if (!open) {
-      setDragOffset(0)
-      sheetDragOffsetRef.current = 0
-      sheetDragStartYRef.current = null
-    }
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return undefined
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prevOverflow
-    }
-  }, [open])
-
-  if (!visible || typeof document === 'undefined') {
-    return null
-  }
-
-  const periodText = /^\d{4}$/.test(String(periodLabel).trim()) ? `${periodLabel} год` : periodLabel
-
-  const sheetDragging = dragOffset > 0
-  const sheetTransform = !animating ? 'translateY(100%)' : `translateY(${dragOffset}px)`
-  const sheetTransitionMs = sheetDragging ? 0 : HISTORY_SHEET_ANIM_MS
-
-  const onSheetHeaderTouchStart = (e) => {
-    if (!animating) return
-    sheetDragStartYRef.current = e.touches[0].clientY
-  }
-
-  const onSheetHeaderTouchMove = (e) => {
-    if (sheetDragStartYRef.current == null || !animating) return
-    const y = e.touches[0].clientY
-    const dy = y - sheetDragStartYRef.current
-    if (dy > 0) {
-      sheetDragOffsetRef.current = dy
-      setDragOffset(dy)
-    }
-  }
-
-  const onSheetHeaderTouchEnd = () => {
-    if (sheetDragStartYRef.current == null) return
-    sheetDragStartYRef.current = null
-    const d = sheetDragOffsetRef.current
-    if (d >= HISTORY_SHEET_SWIPE_CLOSE_PX) {
-      sheetDragOffsetRef.current = 0
-      setDragOffset(0)
-      onClose()
-      return
-    }
-    sheetDragOffsetRef.current = 0
-    setDragOffset(0)
-  }
-
-  const sheet = (
-    <div className="fixed inset-0 z-[120] flex flex-col justify-end overscroll-none">
-      <div
-        aria-hidden
-        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity ${
-          animating ? 'opacity-100' : 'opacity-0'
-        }`}
-        style={{ transitionDuration: `${HISTORY_SHEET_ANIM_MS}ms` }}
-        onClick={onClose}
-      />
-      <div
-        className="relative z-10 flex max-h-[min(85dvh,720px)] min-h-0 w-full flex-col rounded-t-[28px] border-t border-[#3d494d] bg-[#010e24]/98 shadow-[0_-12px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl"
-        style={{
-          transform: sheetTransform,
-          transitionProperty: 'transform',
-          transitionDuration: `${sheetTransitionMs}ms`,
-          transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
-        }}
-      >
-        <div
-          className="shrink-0 select-none px-5 pt-4 touch-pan-y"
-          onTouchCancel={onSheetHeaderTouchEnd}
-          onTouchEnd={onSheetHeaderTouchEnd}
-          onTouchMove={onSheetHeaderTouchMove}
-          onTouchStart={onSheetHeaderTouchStart}
-        >
-          <div
-            aria-hidden
-            className="mx-auto mb-3 h-1 w-10 cursor-grab rounded-full bg-[#4cd6fb]/30 active:cursor-grabbing"
-          />
-          <div className="mb-4 flex min-h-[3.25rem] items-center justify-between gap-3">
-            <h3 className="line-clamp-2 min-w-0 flex-1 text-left font-headline text-2xl font-bold leading-tight text-[#d6e3ff] sm:text-3xl">
-              <span className="text-[#d6e3ff]">{title}</span>
-              <span className="font-semibold text-[#869398]"> — </span>
-              <span className="font-semibold text-[#bcc9ce]">{periodText}</span>
-            </h3>
-            <div className="shrink-0">
-              <SubpageCloseButton ariaLabel="Закрыть список операций" onClose={onClose} />
-            </div>
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-8 [-webkit-overflow-scrolling:touch]">
-          {operations.length > 0 ? (
-            <div className="space-y-3">
-              {operations.map((operation) => {
-                const categoryMeta = CATEGORIES[operation.category] || {}
-                return (
-                  <div
-                    key={operation.id}
-                    className="flex items-center justify-between rounded-2xl bg-[#112036] px-4 py-3"
-                  >
-                    <div className="min-w-0 pr-3">
-                      <p className="font-semibold text-[#d6e3ff]">{operation.merchant}</p>
-                      <p className="text-xs text-[#869398]">
-                        {categoryMeta.label || operation.category} · MCC {operation.mcc}
-                      </p>
-                    </div>
-                    <p
-                      className={`inline-flex shrink-0 items-baseline gap-0.5 font-semibold ${
-                        operation.direction === 'in' ? 'text-[#6ee7a8]' : 'text-[#ffb4ab]'
-                      }`}
-                    >
-                      <span className="shrink-0 select-none">{operation.direction === 'in' ? '+' : '−'}</span>
-                      <UzsAmount
-                        as="span"
-                        className="min-w-0"
-                        compact
-                        compactFrom={1_000_000}
-                        value={String(Math.round(operation.amountUzs))}
-                      />
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="rounded-2xl bg-[#112036] p-4 text-sm text-[#869398]">Нет операций для выбранного периода.</div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-
-  return createPortal(sheet, document.body)
 }
 
 function toMonthLabel(monthKey) {
@@ -859,6 +693,244 @@ function buildRingMetricsFromSegments(segments, isUnlocked) {
   return rawMetrics
 }
 
+/** Минимальная «карта» для расчёта остатка и last4 в деталях операции мониторинга. */
+function buildMonitoringCardForHistory(accountId) {
+  const acc = ACCOUNTS.find((a) => a.id === accountId)
+  if (!acc) {
+    return {
+      id: accountId,
+      balanceUzs: 0,
+      movementsAccountId: accountId,
+      last4: '0000',
+    }
+  }
+  const isFx = acc.currency && acc.currency !== 'UZS'
+  const last4 = acc.card ? last4FromPan(acc.card.pan) : '0000'
+  return {
+    id: acc.id,
+    balanceUzs: acc.balanceUzs ?? 0,
+    foreignCurrency: isFx ? acc.currency : null,
+    balanceForeign: isFx && acc.balanceForeign != null ? acc.balanceForeign : null,
+    movementsAccountId: acc.id,
+    last4,
+  }
+}
+
+function OperationsHistorySheet({ open, onClose, title, periodLabel, operations, onSelectOperation }) {
+  const [visible, setVisible] = useState(false)
+  const [animating, setAnimating] = useState(false)
+  const [dragOffset, setDragOffset] = useState(0)
+  const openAnimRafRef = useRef({ outer: 0, inner: 0 })
+  const sheetDragStartYRef = useRef(null)
+  const sheetDragOffsetRef = useRef(0)
+
+  useEffect(() => {
+    if (open) {
+      setVisible(true)
+      /** Всегда один кадр «закрыто», иначе переход не срабатывает при повторном открытии. */
+      setAnimating(false)
+      cancelAnimationFrame(openAnimRafRef.current.outer)
+      cancelAnimationFrame(openAnimRafRef.current.inner)
+      openAnimRafRef.current.outer = requestAnimationFrame(() => {
+        openAnimRafRef.current.inner = requestAnimationFrame(() => setAnimating(true))
+      })
+      return () => {
+        cancelAnimationFrame(openAnimRafRef.current.outer)
+        cancelAnimationFrame(openAnimRafRef.current.inner)
+      }
+    }
+    setAnimating(false)
+    const t = window.setTimeout(() => setVisible(false), HISTORY_SHEET_ANIM_MS)
+    return () => window.clearTimeout(t)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      setDragOffset(0)
+      sheetDragOffsetRef.current = 0
+      sheetDragStartYRef.current = null
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [open])
+
+  if (!visible || typeof document === 'undefined') {
+    return null
+  }
+
+  const periodText = /^\d{4}$/.test(String(periodLabel).trim()) ? `${periodLabel} год` : periodLabel
+
+  const sheetDragging = dragOffset > 0
+  const sheetTransform = !animating ? 'translateY(100%)' : `translateY(${dragOffset}px)`
+  const sheetTransitionMs = sheetDragging ? 0 : HISTORY_SHEET_ANIM_MS
+
+  const onSheetHeaderTouchStart = (e) => {
+    if (!animating) return
+    sheetDragStartYRef.current = e.touches[0].clientY
+  }
+
+  const onSheetHeaderTouchMove = (e) => {
+    if (sheetDragStartYRef.current == null || !animating) return
+    const y = e.touches[0].clientY
+    const dy = y - sheetDragStartYRef.current
+    if (dy > 0) {
+      sheetDragOffsetRef.current = dy
+      setDragOffset(dy)
+    }
+  }
+
+  const onSheetHeaderTouchEnd = () => {
+    if (sheetDragStartYRef.current == null) return
+    sheetDragStartYRef.current = null
+    const d = sheetDragOffsetRef.current
+    if (d >= HISTORY_SHEET_SWIPE_CLOSE_PX) {
+      sheetDragOffsetRef.current = 0
+      setDragOffset(0)
+      onClose()
+      return
+    }
+    sheetDragOffsetRef.current = 0
+    setDragOffset(0)
+  }
+
+  const sheet = (
+    <div className="fixed inset-0 z-[120] flex flex-col justify-end overscroll-none">
+      <div
+        aria-hidden
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity ${
+          animating ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{ transitionDuration: `${HISTORY_SHEET_ANIM_MS}ms` }}
+        onClick={onClose}
+      />
+      <div
+        className="relative z-10 flex max-h-[min(85dvh,720px)] min-h-0 w-full flex-col rounded-t-[28px] border-t border-[#3d494d] bg-[#010e24]/98 shadow-[0_-12px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+        style={{
+          transform: sheetTransform,
+          transitionProperty: 'transform',
+          transitionDuration: `${sheetTransitionMs}ms`,
+          transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
+      >
+        <div
+          className="shrink-0 select-none px-5 pt-4 touch-pan-y"
+          onTouchCancel={onSheetHeaderTouchEnd}
+          onTouchEnd={onSheetHeaderTouchEnd}
+          onTouchMove={onSheetHeaderTouchMove}
+          onTouchStart={onSheetHeaderTouchStart}
+        >
+          <div
+            aria-hidden
+            className="mx-auto mb-3 h-1 w-10 cursor-grab rounded-full bg-[#4cd6fb]/30 active:cursor-grabbing"
+          />
+          <div className="mb-4 flex min-h-[3.25rem] items-center justify-between gap-3">
+            <h3 className="line-clamp-2 min-w-0 flex-1 text-left font-headline text-2xl font-bold leading-tight text-[#d6e3ff] sm:text-3xl">
+              <span className="text-[#d6e3ff]">{title}</span>
+              <span className="font-semibold text-[#869398]"> — </span>
+              <span className="font-semibold text-[#bcc9ce]">{periodText}</span>
+            </h3>
+            <div className="shrink-0">
+              <SubpageCloseButton ariaLabel="Закрыть список операций" onClose={onClose} />
+            </div>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-8 [-webkit-overflow-scrolling:touch]">
+          {operations.length > 0 ? (
+            <div className="flex flex-col gap-1.5 sm:gap-2 md:gap-2.5">
+              {operations.map((operation) => {
+                const categoryMeta = CATEGORIES[operation.category] || {}
+                const accent =
+                  CATEGORY_RING_COLOR_OVERRIDES[operation.category] ??
+                  CATEGORIES[operation.category]?.color ??
+                  '#94a3b8'
+                const listIcon = CATEGORY_ICON_MAP[operation.category] || CATEGORY_ICON_MAP.other
+
+                return (
+                  <button
+                    key={operation.id}
+                    type="button"
+                    className="grid min-h-[2.625rem] w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-0 rounded-full border py-1 pl-1 pr-1.5 text-left transition-[transform,box-shadow] active:scale-[0.99] sm:min-h-[2.75rem] sm:gap-x-1.5 sm:py-1.5 sm:pl-1.5 sm:pr-2"
+                    style={{
+                      borderColor: `${accent}50`,
+                      background: `linear-gradient(95deg, ${accent}22 0%, rgba(17,32,54,0.9) 42%, rgba(17,28,46,0.94) 100%)`,
+                      boxShadow: `inset 0 1px 0 ${accent}18`,
+                    }}
+                    onClick={() => onSelectOperation?.(operation)}
+                  >
+                    <span
+                      className="relative flex shrink-0 items-center justify-center rounded-full"
+                      style={{
+                        width: `${ICON_BADGE_DIAMETER}px`,
+                        height: `${ICON_BADGE_DIAMETER}px`,
+                        backgroundColor: accent,
+                        boxShadow: `0 0 0 1px rgba(255,255,255,0.2) inset`,
+                      }}
+                    >
+                      <span
+                        className="material-symbols-outlined pointer-events-none leading-none text-white"
+                        style={{
+                          fontSize: `${ICON_BADGE_GLYPH}px`,
+                          lineHeight: 1,
+                          fontVariationSettings: '"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24',
+                          textShadow:
+                            '0 0 1px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 8px rgba(0, 0, 0, 0.25)',
+                        }}
+                      >
+                        {listIcon}
+                      </span>
+                    </span>
+
+                    <span
+                      lang="ru"
+                      className="min-w-0 hyphens-auto break-words text-left text-[11px] font-medium leading-[1.2] tracking-tight text-[#e8eef9] [overflow-wrap:anywhere] line-clamp-2 sm:text-[12px] md:text-[13px]"
+                    >
+                      <span className="block leading-[1.15]">{operation.merchant}</span>
+                      <span className="mt-0.5 block text-[9px] font-normal leading-[1.15] text-[#869398] sm:text-[10px]">
+                        {categoryMeta.label || operation.category}
+                      </span>
+                    </span>
+
+                    <div
+                      className={`shrink-0 justify-self-end whitespace-nowrap text-right text-[10px] font-semibold leading-none tabular-nums sm:text-[11px] md:text-xs ${
+                        operation.direction === 'in' ? 'text-[#6ee7a8]' : 'text-[#ffb4ab]'
+                      }`}
+                    >
+                      <span className="mr-0.5 inline-block select-none align-baseline">
+                        {operation.direction === 'in' ? '+' : '−'}
+                      </span>
+                      <UzsAmount
+                        as="span"
+                        className="inline-flex items-baseline leading-none"
+                        compact
+                        compactFrom={1_000_000}
+                        currencyClassName="inline-block shrink-0 align-baseline font-semibold uppercase tracking-[0.12em] text-[#aab8ce]"
+                        value={String(Math.round(operation.amountUzs))}
+                      />
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-[#112036] p-4 text-sm text-[#869398]">
+              Нет операций для выбранного периода.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  return createPortal(sheet, document.body)
+}
+
 export default function CostPage({
   mode = 'debit',
   embedded = false,
@@ -895,6 +967,8 @@ export default function CostPage({
   const [transferFilterMenuMounted, setTransferFilterMenuMounted] = useState(false)
   const [transferFilterMenuEntered, setTransferFilterMenuEntered] = useState(false)
   const [historySheetOpen, setHistorySheetOpen] = useState(false)
+  const [historyDetailMovementId, setHistoryDetailMovementId] = useState(null)
+  const linkedDepositMovements = useMemo(() => loadDepositCardMovements(), [])
   const accountFilterDropdownRef = useRef(null)
   const transferFilterDropdownRef = useRef(null)
 
@@ -1354,11 +1428,28 @@ export default function CostPage({
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
     : []
 
+  const historyMovementDetail = useMemo(() => {
+    if (!historyDetailMovementId) return null
+    const op = TRANSACTIONS.find((t) => t.id === historyDetailMovementId)
+    if (!op) return null
+    const card = buildMonitoringCardForHistory(op.accountId)
+    const raw = getMergedRawMovementsForCard(card, linkedDepositMovements)
+    const allMovements = withBalanceAfter(card, raw)
+    const movement = allMovements.find((m) => m.id === op.id) ?? { ...op }
+    return { card, movement, allMovements }
+  }, [historyDetailMovementId, linkedDepositMovements])
+
   const historySectionTitle = 'Операции'
 
   useEffect(() => {
     setHistorySheetOpen(false)
   }, [selectedPeriodIndex])
+
+  useEffect(() => {
+    if (!historySheetOpen) {
+      setHistoryDetailMovementId(null)
+    }
+  }, [historySheetOpen])
 
   const debitMiniBar = useMemo(
     () =>
@@ -2251,7 +2342,20 @@ export default function CostPage({
         title={historySectionTitle}
         periodLabel={periodLabel}
         operations={historyOperations}
+        onSelectOperation={(op) => setHistoryDetailMovementId(op.id)}
       />
+
+      {historyMovementDetail ? (
+        <MovementDetailSheet
+          card={historyMovementDetail.card}
+          movement={historyMovementDetail.movement}
+          allMovements={historyMovementDetail.allMovements}
+          isUnlocked={isUnlocked}
+          onClose={() => setHistoryDetailMovementId(null)}
+          onOpenMovement={(m) => setHistoryDetailMovementId(m.id)}
+          overlayZIndexClass="z-[130]"
+        />
+      ) : null}
     </div>
   )
 }

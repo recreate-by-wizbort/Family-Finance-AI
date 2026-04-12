@@ -1,4 +1,4 @@
-import { ACCOUNTS, LINKED_EXTERNAL_CARDS, PRIMARY_BANK_RECREATE } from '../mockData'
+import { ACCOUNTS, DEFAULT_CARDHOLDER_NAME, LINKED_EXTERNAL_CARDS, PRIMARY_BANK_RECREATE } from '../mockData'
 import { loadPrimaryCardId, loadRemovedRowIds } from './deletedCards'
 
 export const HOME_OWNER_ID = 'user_1'
@@ -40,6 +40,7 @@ function buildStaticRows() {
       holderName: acc.card.holderName,
       movementsAccountId: acc.id,
       linkedMovementsCardId: null,
+      accentColor: acc.card.accentColor ?? '#4cd6fb',
     }
   }
 
@@ -76,6 +77,7 @@ function buildStaticRows() {
       holderName: card.holderName,
       movementsAccountId: null,
       linkedMovementsCardId: card.id,
+      accentColor: card.accentColor ?? '#4cd6fb',
     }
     if (card.bank === bank) {
       primaryLinked.push(row)
@@ -113,11 +115,40 @@ function mapUserLinkedToRows(userLinkedCards, renamedLabels) {
     holderName: c.holderName,
     movementsAccountId: null,
     linkedMovementsCardId: c.id,
+    accentColor: c.accentColor ?? '#4cd6fb',
   }))
+}
+
+export function buildUserAccountRows(userAccounts, primaryBank) {
+  return userAccounts.map((acc) => {
+    const pan = String(acc.accountNumber ?? '').replace(/\D/g, '') || '0'.repeat(16)
+    const last4 = last4FromPan(pan)
+    const isFx = acc.currency && acc.currency !== 'UZS'
+    return {
+      id: acc.id,
+      kind: 'account',
+      bank: primaryBank,
+      sheetTitle: acc.label,
+      detailLine: `${last4} · ${primaryBank}`,
+      balanceUzs: isFx ? 0 : acc.amount ?? 0,
+      foreignCurrency: isFx ? acc.currency : null,
+      balanceForeign: isFx ? acc.amount ?? 0 : null,
+      processingSystem: 'ACCOUNT',
+      pan,
+      last4,
+      expires: '—',
+      holderName: DEFAULT_CARDHOLDER_NAME,
+      movementsAccountId: null,
+      linkedMovementsCardId: null,
+      isUserOpenedAccount: true,
+      accentColor: '#58d6f1',
+    }
+  })
 }
 
 function applyCardBalanceDelta(c, cardBalanceDeltas) {
   if (!c) return c
+  if (c.isUserOpenedAccount) return c
   const d = cardBalanceDeltas[c.id]
   if (!d) return c
   if (c.foreignCurrency) {
@@ -127,26 +158,29 @@ function applyCardBalanceDelta(c, cardBalanceDeltas) {
 }
 
 /**
- * Тот же список карт/счетов, что на главной: порядок, скрытые строки, дельты баланса.
+ * Те же секции, что на главной: порядок, скрытые строки, дельты, пользовательские карты и счета.
  */
-export function computeAllUserCards({
+export function computeHomeCardSections({
   cardBalanceDeltas = {},
   removedRowIds: removedRowIdsArg,
   primaryCardId: primaryCardIdArg,
   renamedLabels = {},
   userLinkedCards = [],
-}) {
-  const { primaryLinkedItems, otherLinkedBase, accountItems } = getStaticRows()
+  userAccounts = [],
+} = {}) {
+  const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems } = getStaticRows()
   const removedRowIds = removedRowIdsArg ?? loadRemovedRowIds()
   const primaryCardId = primaryCardIdArg !== undefined ? primaryCardIdArg : loadPrimaryCardId()
 
   const otherLinkedItems = [...otherLinkedBase, ...mapUserLinkedToRows(userLinkedCards, renamedLabels)]
+  const userAccountRows = buildUserAccountRows(userAccounts, primaryBank)
+  const allAccountItems = [...accountItems, ...userAccountRows]
 
   const skip = (id) => removedRowIds.includes(id)
   const visibleOrderedIds = [
     ...primaryLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id),
     ...otherLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id),
-    ...accountItems.filter((i) => !skip(i.id)).map((i) => i.id),
+    ...allAccountItems.filter((i) => !skip(i.id)).map((i) => i.id),
   ]
 
   let resolvedPrimaryId = null
@@ -175,13 +209,31 @@ export function computeAllUserCards({
     return mapped
   }
 
-  const sortedPrimaryLinked = sortBlock(primaryLinkedItems)
-  const sortedOtherLinked = sortBlock(otherLinkedItems)
-  const sortedAccountItems = sortBlock(accountItems)
+  const sortedPrimaryLinked = sortBlock(primaryLinkedItems).map((c) =>
+    applyCardBalanceDelta(c, cardBalanceDeltas),
+  )
+  const sortedOtherLinked = sortBlock(otherLinkedItems).map((c) =>
+    applyCardBalanceDelta(c, cardBalanceDeltas),
+  )
+  const sortedAccountItems = sortBlock(allAccountItems).map((c) =>
+    applyCardBalanceDelta(c, cardBalanceDeltas),
+  )
 
-  return [
-    ...sortedPrimaryLinked.map((c) => applyCardBalanceDelta(c, cardBalanceDeltas)),
-    ...sortedOtherLinked.map((c) => applyCardBalanceDelta(c, cardBalanceDeltas)),
-    ...sortedAccountItems.map((c) => applyCardBalanceDelta(c, cardBalanceDeltas)),
-  ]
+  const allUserCards = [...sortedPrimaryLinked, ...sortedOtherLinked, ...sortedAccountItems]
+
+  return {
+    primaryBank,
+    sortedPrimaryLinked,
+    sortedOtherLinked,
+    sortedAccountItems,
+    allUserCards,
+    resolvedPrimaryId,
+  }
+}
+
+/**
+ * Плоский список карт/счетов как на главной (для переводов, семейного резерва и т.д.).
+ */
+export function computeAllUserCards(params) {
+  return computeHomeCardSections(params).allUserCards
 }

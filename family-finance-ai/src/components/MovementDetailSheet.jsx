@@ -233,7 +233,7 @@ export default function MovementDetailSheet({
                     <span className="text-xl">•••••• {fx ? movement.currency : 'UZS'}</span>
                   )}
                 </p>
-                {isUnlocked ? (
+                {isUnlocked && movement.balanceAfter != null && !Number.isNaN(Number(movement.balanceAfter)) ? (
                   <p className="mt-2 text-xs text-[#5c6b73]">
                     Остаток после операции:{' '}
                     <span className="font-semibold tabular-nums text-[#d6e3ff]">

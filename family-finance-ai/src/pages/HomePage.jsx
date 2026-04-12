@@ -22,13 +22,9 @@ import CardTransferSheet from '../components/CardTransferSheet'
 import PaymentCardListRow from '../components/PaymentCardListRow'
 import UzsAmount from '../components/UzsAmount'
 import useExchangeRates from '../hooks/useExchangeRates'
-import {
-  ACCOUNTS,
-  DEFAULT_CARDHOLDER_NAME,
-  LINKED_EXTERNAL_CARDS,
-  PRIMARY_BANK_RECREATE,
-} from '../mockData'
 import { isSessionUnlocked } from '../utils/sessionLock'
+import { computeHomeCardSections } from '../utils/buildHomeUserCardsList'
+import { loadCardRenames, loadUserLinkedCards, saveCardRenames, saveUserLinkedCards } from '../utils/homeCardsPersist'
 import {
   loadPrimaryCardId,
   loadRemovedRowIds,
@@ -58,15 +54,6 @@ import {
 import { SPECIAL_OFFERS } from '../data/specialOffers'
 import { loadCardBalanceDeltas, saveCardBalanceDeltas } from '../utils/cardBalanceDeltas'
 
-const HOME_OWNER_ID = 'user_1'
-const PRIMARY_ACCOUNT_ID = 'acc_tbc_main'
-const TRAILING_LIST_ACCOUNT_ID = 'acc_hamkor_current'
-
-function last4FromPan(pan) {
-  const d = String(pan).replace(/\D/g, '')
-  return d.slice(-4)
-}
-
 function depositCountRu(n) {
   const x = Math.abs(n) % 100
   const y = x % 10
@@ -83,10 +70,10 @@ export default function HomePage() {
   const rates = useExchangeRates()
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [selectedCard, setSelectedCard] = useState(null)
-  const [userLinkedCards, setUserLinkedCards] = useState([])
+  const [userLinkedCards, setUserLinkedCards] = useState(() => loadUserLinkedCards())
   const [addCardOpen, setAddCardOpen] = useState(false)
   const [primaryCardId, setPrimaryCardId] = useState(loadPrimaryCardId)
-  const [renamedLabels, setRenamedLabels] = useState({})
+  const [renamedLabels, setRenamedLabels] = useState(() => loadCardRenames())
   const [removedRowIds, setRemovedRowIds] = useState(loadRemovedRowIds)
   const [deposits, setDeposits] = useState(loadDeposits)
   const [openDepositOpen, setOpenDepositOpen] = useState(false)
@@ -155,7 +142,21 @@ export default function HomePage() {
   }, [cardBalanceDeltas])
 
   useEffect(() => {
-    const sync = () => setCardBalanceDeltas(loadCardBalanceDeltas())
+    saveUserLinkedCards(userLinkedCards)
+  }, [userLinkedCards])
+
+  useEffect(() => {
+    saveCardRenames(renamedLabels)
+  }, [renamedLabels])
+
+  useEffect(() => {
+    const sync = () => {
+      setCardBalanceDeltas(loadCardBalanceDeltas())
+      setUserAccounts(loadUserAccounts())
+      setUserLinkedCards(loadUserLinkedCards())
+      setRenamedLabels(loadCardRenames())
+      setLinkedMovementsByCardId(loadDepositCardMovements())
+    }
     const onVis = () => {
       if (document.visibilityState === 'visible') sync()
     }
@@ -532,154 +533,32 @@ export default function HomePage() {
     [],
   )
 
-  const { primaryBank, primaryLinkedItems, otherLinkedBase, accountItems } =
-    useMemo(() => {
-      const primary = ACCOUNTS.find((a) => a.id === PRIMARY_ACCOUNT_ID)
-      const bank = primary?.bank ?? PRIMARY_BANK_RECREATE
-
-      const myAccounts = ACCOUNTS.filter((a) => a.userId === HOME_OWNER_ID)
-      const myLinked = LINKED_EXTERNAL_CARDS.filter((c) => c.ownerUserId === HOME_OWNER_ID)
-
-      const primaryLinked = []
-      const otherLinked = []
-      const accounts = []
-
-      const accountRowFromAcc = (acc) => {
-        const last4 = last4FromPan(acc.card.pan)
-        const isFx = acc.currency && acc.currency !== 'UZS'
-        return {
-          id: acc.id,
-          kind: 'account',
-          bank: acc.bank,
-          sheetTitle: acc.label,
-          detailLine: `${last4} · ${acc.bank}`,
-          balanceUzs: acc.balanceUzs ?? 0,
-          foreignCurrency: isFx ? acc.currency : null,
-          balanceForeign: isFx && acc.balanceForeign != null ? acc.balanceForeign : null,
-          processingSystem: acc.card.processingSystem,
-          pan: acc.card.pan,
-          last4,
-          expires: acc.card.expires,
-          holderName: acc.card.holderName,
-          movementsAccountId: acc.id,
-          linkedMovementsCardId: null,
-        }
-      }
-
-      myAccounts.forEach((acc) => {
-        if (acc.type === 'deposit' || !acc.card || acc.bank !== bank) {
-          return
-        }
-        if (acc.id === TRAILING_LIST_ACCOUNT_ID) {
-          return
-        }
-        accounts.push(accountRowFromAcc(acc))
-      })
-
-      const trailingAcc = myAccounts.find((a) => a.id === TRAILING_LIST_ACCOUNT_ID)
-      if (trailingAcc?.card && trailingAcc.type !== 'deposit' && trailingAcc.bank === bank) {
-        accounts.push(accountRowFromAcc(trailingAcc))
-      }
-
-      myLinked.forEach((card) => {
-        const balanceUzs = typeof card.balanceUzs === 'number' ? card.balanceUzs : 0
-        const last4 = last4FromPan(card.pan)
-        const label = card.userLabel?.trim() || 'Карта'
-        const row = {
-          id: card.id,
-          kind: 'linked',
-          sheetTitle: label,
-          bank: card.bank,
-          detailLine: `${last4} · ${card.bank}`,
-          balanceUzs,
-          processingSystem: card.processingSystem,
-          pan: card.pan,
-          last4,
-          expires: card.expires,
-          holderName: card.holderName,
-          movementsAccountId: null,
-          linkedMovementsCardId: card.id,
-        }
-        if (card.bank === bank) {
-          primaryLinked.push(row)
-        } else {
-          otherLinked.push(row)
-        }
-      })
-
-      return {
-        primaryBank: bank,
-        primaryLinkedItems: primaryLinked,
-        otherLinkedBase: otherLinked,
-        accountItems: accounts,
-      }
-    }, [])
-
-  const otherLinkedItems = useMemo(() => {
-    const extra = userLinkedCards.map((c) => ({
-      id: c.id,
-      kind: 'linked',
-      sheetTitle: renamedLabels[c.id] ?? c.userLabel?.trim() ?? 'Новая карта',
-      bank: c.bank,
-      detailLine: `${last4FromPan(c.pan)} · ${c.bank}`,
-      balanceUzs: c.balanceUzs,
-      processingSystem: c.processingSystem,
-      pan: c.pan,
-      last4: last4FromPan(c.pan),
-      expires: c.expires,
-      holderName: c.holderName,
-      movementsAccountId: null,
-      linkedMovementsCardId: c.id,
-    }))
-    return [...otherLinkedBase, ...extra]
-  }, [otherLinkedBase, userLinkedCards, renamedLabels])
-
-  const userAccountRows = useMemo(
+  const {
+    primaryBank,
+    sortedPrimaryLinked,
+    sortedOtherLinked,
+    sortedAccountItems,
+    allUserCards,
+    resolvedPrimaryId,
+  } = useMemo(
     () =>
-      userAccounts.map((acc) => {
-        const pan = String(acc.accountNumber ?? '').replace(/\D/g, '') || '0'.repeat(16)
-        const last4 = last4FromPan(pan)
-        const isFx = acc.currency && acc.currency !== 'UZS'
-        return {
-          id: acc.id,
-          kind: 'account',
-          bank: primaryBank,
-          sheetTitle: acc.label,
-          detailLine: `${last4} · ${primaryBank}`,
-          balanceUzs: isFx ? 0 : acc.amount ?? 0,
-          foreignCurrency: isFx ? acc.currency : null,
-          balanceForeign: isFx ? acc.amount ?? 0 : null,
-          processingSystem: 'ACCOUNT',
-          pan,
-          last4,
-          expires: '—',
-          holderName: DEFAULT_CARDHOLDER_NAME,
-          movementsAccountId: null,
-          linkedMovementsCardId: null,
-          isUserOpenedAccount: true,
-        }
+      computeHomeCardSections({
+        cardBalanceDeltas,
+        removedRowIds,
+        primaryCardId,
+        renamedLabels,
+        userLinkedCards,
+        userAccounts,
       }),
-    [userAccounts, primaryBank],
+    [
+      cardBalanceDeltas,
+      removedRowIds,
+      primaryCardId,
+      renamedLabels,
+      userLinkedCards,
+      userAccounts,
+    ],
   )
-
-  const allAccountItems = useMemo(
-    () => [...accountItems, ...userAccountRows],
-    [accountItems, userAccountRows],
-  )
-
-  const visibleOrderedIds = useMemo(() => {
-    const skip = (id) => removedRowIds.includes(id)
-    const p = primaryLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id)
-    const o = otherLinkedItems.filter((i) => !skip(i.id)).map((i) => i.id)
-    const a = allAccountItems.filter((i) => !skip(i.id)).map((i) => i.id)
-    return [...p, ...o, ...a]
-  }, [primaryLinkedItems, otherLinkedItems, allAccountItems, removedRowIds])
-
-  const resolvedPrimaryId = useMemo(() => {
-    if (visibleOrderedIds.length === 0) return null
-    if (primaryCardId != null && visibleOrderedIds.includes(primaryCardId)) return primaryCardId
-    return visibleOrderedIds[0]
-  }, [visibleOrderedIds, primaryCardId])
 
   useEffect(() => {
     persistPrimaryCardId(resolvedPrimaryId)
@@ -687,77 +566,6 @@ export default function HomePage() {
       setPrimaryCardId(resolvedPrimaryId)
     }
   }, [resolvedPrimaryId, primaryCardId])
-
-  const sortedPrimaryLinked = useMemo(() => {
-    const items = primaryLinkedItems
-      .filter((item) => !removedRowIds.includes(item.id))
-      .map((item) => ({
-        ...item,
-        sheetTitle: renamedLabels[item.id] ?? item.sheetTitle,
-      }))
-    if (resolvedPrimaryId) {
-      const idx = items.findIndex((i) => i.id === resolvedPrimaryId)
-      if (idx > 0) {
-        const [el] = items.splice(idx, 1)
-        items.unshift(el)
-      }
-    }
-    return items
-  }, [primaryLinkedItems, removedRowIds, renamedLabels, resolvedPrimaryId])
-
-  const sortedOtherLinked = useMemo(() => {
-    const items = otherLinkedItems
-      .filter((item) => !removedRowIds.includes(item.id))
-      .map((item) => ({
-        ...item,
-        sheetTitle: renamedLabels[item.id] ?? item.sheetTitle,
-      }))
-    if (resolvedPrimaryId) {
-      const idx = items.findIndex((i) => i.id === resolvedPrimaryId)
-      if (idx > 0) {
-        const [el] = items.splice(idx, 1)
-        items.unshift(el)
-      }
-    }
-    return items
-  }, [otherLinkedItems, removedRowIds, renamedLabels, resolvedPrimaryId])
-
-  const sortedAccountItems = useMemo(() => {
-    const items = allAccountItems
-      .filter((item) => !removedRowIds.includes(item.id))
-      .map((item) => ({
-        ...item,
-        sheetTitle: renamedLabels[item.id] ?? item.sheetTitle,
-      }))
-    if (resolvedPrimaryId) {
-      const idx = items.findIndex((i) => i.id === resolvedPrimaryId)
-      if (idx > 0) {
-        const [el] = items.splice(idx, 1)
-        items.unshift(el)
-      }
-    }
-    return items
-  }, [allAccountItems, removedRowIds, renamedLabels, resolvedPrimaryId])
-
-  const applyCardBalanceDelta = useCallback((c) => {
-    if (!c) return c
-    if (c.isUserOpenedAccount) return c
-    const d = cardBalanceDeltas[c.id]
-    if (!d) return c
-    if (c.foreignCurrency) {
-      return { ...c, balanceForeign: (c.balanceForeign ?? 0) + d }
-    }
-    return { ...c, balanceUzs: (c.balanceUzs ?? 0) + d }
-  }, [cardBalanceDeltas])
-
-  const allUserCards = useMemo(
-    () => [
-      ...sortedPrimaryLinked.map(applyCardBalanceDelta),
-      ...sortedOtherLinked.map(applyCardBalanceDelta),
-      ...sortedAccountItems.map(applyCardBalanceDelta),
-    ],
-    [sortedPrimaryLinked, sortedOtherLinked, sortedAccountItems, applyCardBalanceDelta],
-  )
 
   const handleTransferComplete = useCallback(
     (cardId, amountUzs, debitInCardCurrency, sourceCard) => {
@@ -773,13 +581,11 @@ export default function HomePage() {
 
   const cardsOnlyTotalUzs = useMemo(() => {
     let sum = 0
-    const allCardItems = [...sortedPrimaryLinked, ...sortedOtherLinked]
-    for (const card of allCardItems) {
-      const delta = cardBalanceDeltas[card.id] ?? 0
-      sum += (card.balanceUzs ?? 0) + delta
+    for (const card of [...sortedPrimaryLinked, ...sortedOtherLinked]) {
+      sum += card.balanceUzs ?? 0
     }
     return Math.round(sum * 100) / 100
-  }, [sortedPrimaryLinked, sortedOtherLinked, cardBalanceDeltas])
+  }, [sortedPrimaryLinked, sortedOtherLinked])
 
   const totalPaymentUzsRounded = cardsOnlyTotalUzs
 
@@ -866,7 +672,7 @@ export default function HomePage() {
                       <PaymentCardListRow
                         key={item.id}
                         isUnlocked={isUnlocked}
-                        item={applyCardBalanceDelta(item)}
+                        item={item}
                         onSelect={setSelectedCard}
                         isPrimary={item.id === resolvedPrimaryId}
                       />
@@ -885,7 +691,7 @@ export default function HomePage() {
                       <PaymentCardListRow
                         key={item.id}
                         isUnlocked={isUnlocked}
-                        item={applyCardBalanceDelta(item)}
+                        item={item}
                         onSelect={setSelectedCard}
                         isPrimary={item.id === resolvedPrimaryId}
                       />
@@ -912,7 +718,7 @@ export default function HomePage() {
                       <PaymentCardListRow
                         key={item.id}
                         isUnlocked={isUnlocked}
-                        item={applyCardBalanceDelta(item)}
+                        item={item}
                         onSelect={setSelectedCard}
                         isPrimary={item.id === resolvedPrimaryId}
                       />

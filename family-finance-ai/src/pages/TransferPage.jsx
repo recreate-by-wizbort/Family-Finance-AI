@@ -31,6 +31,8 @@ import {
   loadFavoriteRecipients,
 } from '../utils/favoriteRecipients'
 import { loadPrimaryCardId, loadRemovedRowIds } from '../utils/deletedCards'
+import { loadUserAccounts } from '../utils/accounts'
+import { loadCardRenames, loadUserLinkedCards } from '../utils/homeCardsPersist'
 import { isSessionUnlocked } from '../utils/sessionLock'
 
 function favoriteCanTransfer(f) {
@@ -93,8 +95,9 @@ export default function TransferPage() {
         cardBalanceDeltas,
         removedRowIds: loadRemovedRowIds(),
         primaryCardId: loadPrimaryCardId(),
-        renamedLabels: {},
-        userLinkedCards: [],
+        renamedLabels: loadCardRenames(),
+        userLinkedCards: loadUserLinkedCards(),
+        userAccounts: loadUserAccounts(),
       }),
     [cardBalanceDeltas],
   )
