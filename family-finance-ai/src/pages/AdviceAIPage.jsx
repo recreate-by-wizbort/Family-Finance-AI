@@ -1198,7 +1198,7 @@ export default function AdviceAIPage() {
       <AppTopBar />
 
       {/* Fixed scope toggle + close */}
-      <div className="fixed left-0 right-0 top-[64px] z-40 flex items-center justify-between bg-[#041329]/90 px-4 py-3 backdrop-blur-lg sm:px-6">
+      <div className="fixed left-0 right-0 top-[76px] z-40 flex items-center justify-between bg-[#041329]/90 px-4 py-3 backdrop-blur-lg sm:px-6">
         <div className="w-10 shrink-0 sm:w-[3.25rem]" />
         <div className="relative flex w-full max-w-[260px] rounded-full bg-[#112036] p-1 shadow-inner shadow-black/30">
           <button type="button" className={`${pillBase} ${scope === 'personal' ? pillActive : pillInactive}`} onClick={() => changeScope('personal')}>
@@ -1211,7 +1211,7 @@ export default function AdviceAIPage() {
         <SubpageCloseButton ariaLabel="Закрыть" onClose={returnToMonitoring} />
       </div>
 
-      <main className="mx-auto mt-[136px] max-w-5xl px-6 pb-32">
+      <main className="mx-auto mt-[148px] max-w-5xl px-6 pb-32">
         {/* Header */}
         <section className="mb-6">
           <h1 className="mb-3 font-headline text-3xl font-extrabold leading-tight tracking-tight text-[#d6e3ff]">Ваш персональный помощник AI</h1>
