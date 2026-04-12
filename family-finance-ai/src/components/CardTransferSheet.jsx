@@ -17,7 +17,7 @@ const RECIPIENT_NAMES = [
   'Dilshod Raximov',
   'Nodira Alimova',
   'Sanjar Jumayev',
-  'Malika Toshpulatova',
+  'Madina Rahimova',
   'Rustam Xolmatov',
   'Gulnora Usmanova',
   'Bekzod Mirzayev',

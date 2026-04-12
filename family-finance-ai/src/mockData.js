@@ -1,6 +1,8 @@
 // mockData.js
 // MVP-ready mock dataset that mirrors a potential banking API contract.
 
+import andreyAvatarDataUri from './constants/andreyAvatarDataUri.js'
+
 export const MOCK_DATA_META = {
   version: '1.1.0',
   generatedAt: '2026-04-10T12:00:00+05:00',
@@ -10,9 +12,30 @@ export const MOCK_DATA_META = {
 }
 
 export const FAMILY_MEMBERS = [
-  { id: 'user_1', name: 'Alisher', role: 'owner', avatar: 'A', color: '#4cd6fb' },
-  { id: 'user_2', name: 'Malika', role: 'spouse', avatar: 'M', color: '#58d6f1' },
-  { id: 'user_3', name: 'Timur', role: 'child', avatar: 'T', color: '#22c55e' },
+  {
+    id: 'user_1',
+    name: 'Андрей',
+    role: 'owner',
+    avatar: 'А',
+    color: '#4cd6fb',
+    avatarUrl: andreyAvatarDataUri,
+  },
+  {
+    id: 'user_2',
+    name: 'Жена',
+    role: 'spouse',
+    avatar: 'Ж',
+    color: '#f97316',
+    avatarUrl: '/avatars/wife.jpg',
+  },
+  {
+    id: 'user_3',
+    name: 'Сын',
+    role: 'child',
+    avatar: 'С',
+    color: '#22c55e',
+    avatarUrl: '/avatars/son.jpg',
+  },
 ]
 
 export const FAMILY_GROUP = {
@@ -84,7 +107,7 @@ export const ACCOUNTS = [
     type: 'debit',
     currency: 'UZS',
     balanceUzs: 2100000,
-    label: 'Malika card',
+    label: 'Карта жены',
     isOwn: true,
   },
   {
@@ -94,7 +117,7 @@ export const ACCOUNTS = [
     type: 'debit',
     currency: 'UZS',
     balanceUzs: 650000,
-    label: 'Timur card',
+    label: 'Карта сына',
     isOwn: true,
   },
   {
@@ -1248,7 +1271,7 @@ function buildYearTransactions() {
         direction: 'out',
         mcc: null,
         amountUzs: familyTransferAmountUzs,
-        merchant: 'Malika',
+        merchant: 'Жена',
         category: 'family',
         description: 'Семейный перевод',
       },
@@ -1261,7 +1284,7 @@ function buildYearTransactions() {
         direction: 'in',
         mcc: null,
         amountUzs: familyTransferAmountUzs,
-        merchant: 'Алишер',
+        merchant: 'Андрей',
         category: 'family',
         description: 'Семейный перевод',
       },

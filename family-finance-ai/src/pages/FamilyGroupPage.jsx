@@ -21,6 +21,7 @@ import { addToPresetGoalSaved, appendGoalTransaction } from '../utils/goalFinanc
 import { loadUserCreatedGoals, saveUserCreatedGoals } from '../utils/userGoalsPersist'
 import { formatGroupedAmountInput, parseGroupedAmountString } from '../utils/amountInputFormat'
 import { aggregateFamilyReserveContributions } from '../utils/familyReserveContributionAnalytics'
+import { FAMILY_MEMBERS } from '../mockData.js'
 import {
   RESERVE_DONUT_ICON_BADGE_DIAMETER,
   RESERVE_DONUT_ICON_BADGE_GLYPH,
@@ -36,12 +37,16 @@ const LAST_MONTH_RESERVE = 1_600_000
 
 const PRESET_GOAL_IDS = new Set(PRESET_FINANCIAL_GOALS.map((g) => g.id))
 
-const MEMBER_CONTRIBUTIONS = [
-  { id: 'user_1', name: 'Alisher', avatar: 'A', color: '#4cd6fb', amount: 5_200_000, pct: 52.5, topups: 12, withdrawals: 3 },
-  /** Отдельный оттенок от Alisher, чтобы на диаграмме и карточках участники визуально не сливались. */
-  { id: 'user_2', name: 'Malika', avatar: 'M', color: '#f97316', amount: 3_500_000, pct: 35.4, topups: 8, withdrawals: 2 },
-  { id: 'user_3', name: 'Timur', avatar: 'T', color: '#22c55e', amount: 1_200_000, pct: 12.1, topups: 4, withdrawals: 1 },
+const MEMBER_STATS = [
+  { amount: 5_200_000, pct: 52.5, topups: 12, withdrawals: 3 },
+  { amount: 3_500_000, pct: 35.4, topups: 8, withdrawals: 2 },
+  { amount: 1_200_000, pct: 12.1, topups: 4, withdrawals: 1 },
 ]
+
+const MEMBER_CONTRIBUTIONS = FAMILY_MEMBERS.map((m, i) => ({
+  ...m,
+  ...MEMBER_STATS[i],
+}))
 
 /** Круг и стрелка — те же размеры, что у `SubpageCloseButton` (крестик). */
 function CircleArrowButton({ onClick, ariaLabel }) {
@@ -68,8 +73,8 @@ function CircleArrowButton({ onClick, ariaLabel }) {
 const ALL_TRANSFERS = [
   {
     id: 'tr_1',
-    from: { name: 'Alisher', cardLast4: '1234', bank: 'HUMO' },
-    to: { name: 'Malika', cardLast4: '7890', bank: 'Kapital Bank' },
+    from: { name: 'Андрей', cardLast4: '1234', bank: 'HUMO' },
+    to: { name: 'Жена', cardLast4: '7890', bank: 'Kapital Bank' },
     amount: 1_500_000,
     category: 'Продукты и быт',
     timestamp: '2026-04-10T14:20:00+05:00',
@@ -77,8 +82,8 @@ const ALL_TRANSFERS = [
   },
   {
     id: 'tr_2',
-    from: { name: 'Malika', cardLast4: '7890', bank: 'Kapital Bank' },
-    to: { name: 'Timur', cardLast4: '4521', bank: 'Uzum Bank' },
+    from: { name: 'Жена', cardLast4: '7890', bank: 'Kapital Bank' },
+    to: { name: 'Сын', cardLast4: '4521', bank: 'Uzum Bank' },
     amount: 250_000,
     category: 'Карманные расходы',
     timestamp: '2026-04-09T18:45:00+05:00',
@@ -86,8 +91,8 @@ const ALL_TRANSFERS = [
   },
   {
     id: 'tr_3',
-    from: { name: 'Alisher', cardLast4: '1234', bank: 'HUMO' },
-    to: { name: 'Timur', cardLast4: '4521', bank: 'Uzum Bank' },
+    from: { name: 'Андрей', cardLast4: '1234', bank: 'HUMO' },
+    to: { name: 'Сын', cardLast4: '4521', bank: 'Uzum Bank' },
     amount: 400_000,
     category: 'Обучение',
     timestamp: '2026-04-08T10:15:00+05:00',
@@ -95,8 +100,8 @@ const ALL_TRANSFERS = [
   },
   {
     id: 'tr_4',
-    from: { name: 'Malika', cardLast4: '7890', bank: 'Kapital Bank' },
-    to: { name: 'Alisher', cardLast4: '1234', bank: 'HUMO' },
+    from: { name: 'Жена', cardLast4: '7890', bank: 'Kapital Bank' },
+    to: { name: 'Андрей', cardLast4: '1234', bank: 'HUMO' },
     amount: 800_000,
     category: 'Возврат средств',
     timestamp: '2026-04-07T12:30:00+05:00',
@@ -104,8 +109,8 @@ const ALL_TRANSFERS = [
   },
   {
     id: 'tr_5',
-    from: { name: 'Alisher', cardLast4: '1234', bank: 'HUMO' },
-    to: { name: 'Malika', cardLast4: '7890', bank: 'Kapital Bank' },
+    from: { name: 'Андрей', cardLast4: '1234', bank: 'HUMO' },
+    to: { name: 'Жена', cardLast4: '7890', bank: 'Kapital Bank' },
     amount: 2_000_000,
     category: 'Аренда',
     timestamp: '2026-04-05T09:00:00+05:00',
@@ -113,8 +118,8 @@ const ALL_TRANSFERS = [
   },
   {
     id: 'tr_6',
-    from: { name: 'Timur', cardLast4: '4521', bank: 'Uzum Bank' },
-    to: { name: 'Malika', cardLast4: '7890', bank: 'Kapital Bank' },
+    from: { name: 'Сын', cardLast4: '4521', bank: 'Uzum Bank' },
+    to: { name: 'Жена', cardLast4: '7890', bank: 'Kapital Bank' },
     amount: 50_000,
     category: 'Личные',
     timestamp: '2026-04-03T16:40:00+05:00',
@@ -133,13 +138,31 @@ function formatDate(ts) {
 
 function getTransferFrequency(transfer) {
   const pair = `${transfer.from.name}-${transfer.to.name}`
-  const counts = { 'Alisher-Malika': 18, 'Malika-Timur': 12, 'Alisher-Timur': 6, 'Malika-Alisher': 4, 'Timur-Malika': 2 }
+  const counts = { 'Андрей-Жена': 18, 'Жена-Сын': 12, 'Андрей-Сын': 6, 'Жена-Андрей': 4, 'Сын-Жена': 2 }
   return counts[pair] || 1
 }
 
-function MemberAvatar({ name, color, size = 'md', initial }) {
+function MemberAvatar({ name, color, size = 'md', initial, imageUrl }) {
+  const sizeClasses =
+    size === 'responsive'
+      ? 'h-[min(4.75rem,26vw)] w-[min(4.75rem,26vw)] sm:h-14 sm:w-14 text-xl'
+      : size === 'xl'
+        ? 'h-[4.75rem] w-[4.75rem] text-2xl sm:h-[5.25rem] sm:w-[5.25rem]'
+        : size === 'sm'
+          ? 'h-8 w-8 text-xs'
+          : size === 'lg'
+            ? 'h-14 w-14 text-xl'
+            : 'h-10 w-10 text-sm'
+  if (imageUrl) {
+    return (
+      <img
+        alt={name || ''}
+        className={`${sizeClasses} shrink-0 rounded-full object-cover shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]`}
+        src={imageUrl}
+      />
+    )
+  }
   const letter = (initial ?? name?.[0] ?? '?').toString().slice(0, 1).toUpperCase()
-  const sizeClasses = size === 'sm' ? 'h-8 w-8 text-xs' : size === 'lg' ? 'h-14 w-14 text-xl' : 'h-10 w-10 text-sm'
   return (
     <div
       className={`${sizeClasses} flex shrink-0 items-center justify-center rounded-full font-bold text-white`}
@@ -156,6 +179,10 @@ function BottomPanel({
   title,
   children,
   sheetMaxClass = 'max-h-[85dvh]',
+  /** Минимальная высота листа (например для блока с крупным аватаром). */
+  sheetMinClass = '',
+  /** Если false — тело без overflow-y, чтобы не обрезать аватар с отрицательными отступами. */
+  scrollableBody = true,
   /** Зафиксировать высоту листа (например h и max-h одинаковые) — без скачка при смене контента. */
   sheetFixedHeightClass = null,
 }) {
@@ -192,34 +219,44 @@ function BottomPanel({
         onClick={onClose}
       />
       <div
-        className={`relative z-10 flex min-h-0 w-full shrink-0 flex-col rounded-t-[28px] border-t border-[#3d494d] bg-[#010e24]/98 shadow-[0_-12px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl transition-transform ${sheetFixedHeightClass ?? sheetMaxClass} ${animating ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`relative z-10 flex w-full shrink-0 flex-col rounded-t-[28px] border-t border-[#3d494d] bg-[#010e24]/98 shadow-[0_-12px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl transition-transform ${sheetMinClass} ${sheetFixedHeightClass ?? sheetMaxClass} ${scrollableBody ? 'min-h-0' : ''} ${animating ? 'translate-y-0' : 'translate-y-full'}`}
         style={{ transitionDuration: `${PANEL_ANIM_MS}ms`, transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)' }}
       >
         <div className="shrink-0 px-5 pt-4">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#4cd6fb]/30" />
-          {title && (
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="font-headline text-xl font-bold text-[#d6e3ff]">{title}</h3>
-              <button
-                aria-label="Закрыть"
-                className={SUBPAGE_CLOSE_BUTTON_CLASS}
-                onClick={onClose}
-                type="button"
+          <div
+            className={`flex items-center gap-3 ${title ? 'mb-5 justify-between' : 'mb-2 justify-end'}`}
+          >
+            {title ? (
+              <h3 className="min-w-0 flex-1 font-headline text-xl font-bold leading-tight text-[#d6e3ff]">
+                {title}
+              </h3>
+            ) : null}
+            <button
+              aria-label="Закрыть"
+              className={SUBPAGE_CLOSE_BUTTON_CLASS}
+              onClick={onClose}
+              type="button"
+            >
+              <span
+                className="material-symbols-outlined leading-none text-[#4cd6fb]"
+                style={{
+                  fontSize: 'clamp(1.625rem, 4.2vw, 1.875rem)',
+                  fontVariationSettings: '"FILL" 0, "wght" 600',
+                }}
               >
-                <span
-                  className="material-symbols-outlined leading-none text-[#4cd6fb]"
-                  style={{
-                    fontSize: 'clamp(1.625rem, 4.2vw, 1.875rem)',
-                    fontVariationSettings: '"FILL" 0, "wght" 600',
-                  }}
-                >
-                  close
-                </span>
-              </button>
-            </div>
-          )}
+                close
+              </span>
+            </button>
+          </div>
         </div>
-        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+2.5rem)] [-webkit-overflow-scrolling:touch] [scrollbar-gutter:stable]">
+        <div
+          className={
+            scrollableBody
+              ? 'min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+2.5rem)] [-webkit-overflow-scrolling:touch] [scrollbar-gutter:stable]'
+              : 'flex-none overflow-visible px-5 pb-[calc(env(safe-area-inset-bottom)+2.5rem)]'
+          }
+        >
           {children}
         </div>
       </div>
@@ -435,7 +472,7 @@ function DistributePanel({ open, onClose, reserveAmount, onDistribute, initialTa
                   onClick={() => { setTargetType('member'); setTargetId(m.id) }}
                   type="button"
                 >
-                  <MemberAvatar name={m.name} color={m.color} />
+                  <MemberAvatar name={m.name} color={m.color} imageUrl={m.avatarUrl} />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-[#d6e3ff]">{m.name}</p>
                   </div>
@@ -517,7 +554,7 @@ function DistributePanel({ open, onClose, reserveAmount, onDistribute, initialTa
           <div className="mb-6 space-y-3">
             {MEMBER_CONTRIBUTIONS.map((m) => (
               <div key={m.id} className="flex items-center gap-3 rounded-xl bg-[#0d1c32] p-4">
-                <MemberAvatar name={m.name} color={m.color} size="sm" />
+                <MemberAvatar name={m.name} color={m.color} size="sm" imageUrl={m.avatarUrl} />
                 <span className="flex-1 font-medium text-[#d6e3ff]">{m.name}</span>
                 {consents[m.id] ? (
                   <span className="material-symbols-outlined text-[#22c55e]" style={{ fontVariationSettings: '"FILL" 1' }}>check_circle</span>
@@ -559,11 +596,20 @@ function MemberActionsPanel({ open, member, onClose, onTransfer, onAnalytics }) 
     'min-w-0 flex-1 rounded-full bg-gradient-to-br from-[#4cd6fb] to-[#00b4d8] py-3.5 text-sm font-bold text-[#00414f] transition hover:brightness-110 active:scale-[0.98]'
 
   return (
-    <BottomPanel open={open} onClose={onClose} title={member.name}>
-      <div className="mb-5 flex flex-col items-center">
-        <MemberAvatar name={member.name} color={member.color} size="lg" initial={member.avatar} />
+    <BottomPanel
+      open={open}
+      onClose={onClose}
+      title={null}
+      sheetMaxClass="max-h-[92dvh]"
+      scrollableBody={false}
+    >
+      <div className="flex flex-col items-center px-2 pb-1 pt-1">
+        <MemberAvatar name={member.name} color={member.color} size="xl" initial={member.avatar} imageUrl={member.avatarUrl} />
+        <h3 className="mt-4 text-center font-headline text-xl font-bold leading-tight text-[#d6e3ff] sm:text-2xl">
+          {member.name}
+        </h3>
       </div>
-      <div className="flex gap-3">
+      <div className="mt-6 flex gap-3">
         <button
           className={actionButtonClass}
           type="button"
@@ -1151,43 +1197,49 @@ export default function FamilyGroupPage() {
           <p className="text-sm font-normal text-[#bcc9ce]">Общий бюджет, участники и переводы внутри семьи.</p>
         </section>
 
-        {/* Участники — над семейным резервом */}
+        {/* Участники — над семейным резервом (сетка 4 колонки: один ряд на узких экранах) */}
         <section className="mb-3" aria-label="Участники семейной группы">
-          <div className="flex flex-wrap items-start gap-5 sm:gap-7">
+          <div className="grid w-full grid-cols-4 items-start justify-items-stretch gap-x-1.5 gap-y-2 sm:gap-x-4 sm:gap-y-3">
             {MEMBER_CONTRIBUTIONS.map((member) => (
-              <div key={member.id} className="flex w-[4.5rem] shrink-0 flex-col items-center gap-2 sm:w-[5.25rem]">
+              <div key={member.id} className="flex min-w-0 flex-col items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
-                  className="rounded-full transition hover:scale-105 active:scale-95"
+                  className="flex w-full max-w-[min(5.25rem,100%)] justify-center rounded-full transition hover:scale-105 active:scale-95"
                   onClick={() => {
                     setSelectedMember(member)
                     setShowMemberActions(true)
                   }}
                 >
-                  <MemberAvatar name={member.name} color={member.color} size="lg" initial={member.avatar} />
+                  <MemberAvatar
+                    name={member.name}
+                    color={member.color}
+                    size="responsive"
+                    initial={member.avatar}
+                    imageUrl={member.avatarUrl}
+                  />
                 </button>
-                <span className="w-full truncate text-center text-xs font-medium leading-tight text-[#d6e3ff] sm:text-sm">
+                <span className="w-full max-w-full hyphens-auto break-words px-0.5 text-center text-[10px] font-medium leading-snug text-[#d6e3ff] sm:text-xs md:text-sm">
                   {member.name}
                 </span>
               </div>
             ))}
-            <div className="flex w-[4.5rem] shrink-0 flex-col items-center gap-2 sm:w-[5.25rem]">
+            <div className="flex min-w-0 flex-col items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
                 aria-label="Добавить участника"
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-[#4cd6fb]/50 bg-[#112036]/50 text-[#4cd6fb] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-[#58d6f1]/70 hover:bg-[#1c2a41] hover:text-[#8de4ff] active:scale-95"
+                className="flex h-[min(4.75rem,26vw)] w-[min(4.75rem,26vw)] max-w-full shrink-0 items-center justify-center justify-self-center rounded-full border-2 border-dashed border-[#4cd6fb]/50 bg-[#112036]/50 text-[#4cd6fb] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-[#58d6f1]/70 hover:bg-[#1c2a41] hover:text-[#8de4ff] active:scale-95 sm:h-14 sm:w-14"
                 onClick={() =>
                   document.getElementById('family-invite')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 }
               >
                 <span
-                  className="material-symbols-outlined leading-none"
-                  style={{ fontSize: '1.75rem', fontVariationSettings: '"FILL" 0, "wght" 500' }}
+                  className="material-symbols-outlined leading-none text-[clamp(1.25rem,6vw,1.75rem)] sm:text-[1.75rem]"
+                  style={{ fontVariationSettings: '"FILL" 0, "wght" 500' }}
                 >
                   add
                 </span>
               </button>
-              <span className="min-h-[2.25rem] w-full sm:min-h-[2.5rem]" aria-hidden />
+              <span className="min-h-[1.75rem] w-full sm:min-h-[2.25rem]" aria-hidden />
             </div>
           </div>
         </section>
@@ -1288,7 +1340,7 @@ export default function FamilyGroupPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               {MEMBER_CONTRIBUTIONS.map((m) => (
                 <div key={m.id} className="flex items-center gap-4 rounded-xl bg-[#112036] p-5">
-                  <MemberAvatar name={m.name} color={m.color} />
+                  <MemberAvatar name={m.name} color={m.color} imageUrl={m.avatarUrl} />
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-[#d6e3ff]">{m.name}</p>
                     <p className="text-sm font-semibold leading-none text-[#58d6f1]">
