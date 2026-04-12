@@ -1,9 +1,19 @@
 import { TRANSACTIONS, FAMILY_MEMBERS, NON_EXPENSE_KINDS } from './mockData'
+import { APP_USER_PROFILE } from './data/userProfile'
 import { loadDeposits, DEPOSIT_RATES, getAccruedInterest, formatDepositCurrency } from './utils/deposits'
 import { loadUserAccounts } from './utils/accounts'
 import { BANK_PROMOTIONS, PARTNER_PROMOTIONS } from './data/specialOffers'
 
-export const USER_PROFILE = { name: 'Андрей', userId: 'user_1' }
+/** Имя в AI и короткие подписи — `name`; полные данные для экрана аккаунта — остальные поля. */
+export const USER_PROFILE = {
+  name: APP_USER_PROFILE.firstName,
+  userId: APP_USER_PROFILE.userId,
+  lastName: APP_USER_PROFILE.lastName,
+  fullName: APP_USER_PROFILE.fullName,
+  birthDateDisplay: APP_USER_PROFILE.birthDateDisplay,
+  birthDateIso: APP_USER_PROFILE.birthDateIso,
+  avatarUrl: APP_USER_PROFILE.avatarUrl,
+}
 
 const CATEGORY_LABELS = {
   groceries: 'Продукты',

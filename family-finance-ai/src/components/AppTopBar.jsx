@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import andreyAvatarDataUri from '../constants/andreyAvatarDataUri'
+import { APP_USER_PROFILE } from '../data/userProfile'
 
 export default function AppTopBar() {
   const location = useLocation()
@@ -14,12 +14,22 @@ export default function AppTopBar() {
 
   return (
     <header className="fixed top-0 z-50 flex w-full items-center justify-between bg-[#041329] px-6 py-4">
-      <div className="flex items-center gap-3">
-        <div className="h-10 w-10 overflow-hidden rounded-full border border-[#3d494d]/20 bg-[#27354c]">
-          <img alt="Андрей" className="h-full w-full object-cover" src={andreyAvatarDataUri} />
+      <button
+        type="button"
+        className="flex min-w-0 items-center gap-3 rounded-2xl py-1 pr-2 text-left transition hover:bg-[#112036]/80 active:scale-[0.99]"
+        onClick={() => navigate('/account')}
+      >
+        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[#3d494d]/20 bg-[#27354c]">
+          <img
+            alt={APP_USER_PROFILE.fullName}
+            className="h-full w-full object-cover"
+            src={APP_USER_PROFILE.avatarUrl}
+          />
         </div>
-        <span className="font-headline text-lg font-bold tracking-tighter text-[#d6e3ff]">Андрей</span>
-      </div>
+        <span className="truncate font-headline text-lg font-bold tracking-tighter text-[#d6e3ff]">
+          {APP_USER_PROFILE.firstName}
+        </span>
+      </button>
 
       <button
         aria-label="Открыть уведомления"

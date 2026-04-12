@@ -9,6 +9,7 @@ import FamilyGroupPage from './pages/FamilyGroupPage'
 import GoalPage from './pages/GoalPage'
 import MonitoringPage from './pages/MonitoringPage'
 import AdviceAIPage from './pages/AdviceAIPage'
+import AccountPage from './pages/AccountPage'
 import NotificationsPage from './pages/NotificationsPage'
 import PayPage from './pages/PayPage'
 import PreviewPage from './pages/PreviewPage'
@@ -97,6 +98,14 @@ function App() {
           element={
             <RequirePinRoute>
               <AdviceAIPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
+          path="/account"
+          element={
+            <RequirePinRoute>
+              <AccountPage />
             </RequirePinRoute>
           }
         />

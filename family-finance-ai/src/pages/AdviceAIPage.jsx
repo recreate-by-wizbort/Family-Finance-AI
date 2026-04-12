@@ -1140,7 +1140,7 @@ export default function AdviceAIPage() {
 
     try {
       const history = historyForAI.map((m) => ({ role: m.role, content: m.text }))
-      const systemPrompt = buildSystemPrompt(scope, periodLabel, USER_PROFILE.name)
+      const systemPrompt = buildSystemPrompt(scope, periodLabel, USER_PROFILE.fullName || USER_PROFILE.name)
 
       const enrichedBudget = [
         budgetContext,
