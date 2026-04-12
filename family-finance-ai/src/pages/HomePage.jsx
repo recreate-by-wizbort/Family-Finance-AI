@@ -645,12 +645,12 @@ export default function HomePage() {
                   <UzsAmount as="span" currencyClassName="!text-inherit" value={balanceValue} />
                 </h2>
               </div>
-              <div className="mt-8 flex items-center justify-between">
+              <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => openComingSoon('Оплата по QR')}
-                    className="flex h-10 items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-3 backdrop-blur-md transition-all active:scale-95"
+                    className="flex h-10 items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-2.5 sm:px-3 backdrop-blur-md transition-all active:scale-95"
                   >
                     <span className="material-symbols-outlined text-sm text-[#003642]">qr_code_scanner</span>
                     <span className="text-[11px] font-semibold text-[#003642]">QR</span>
@@ -658,7 +658,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     onClick={() => openComingSoon('Оплата по NFC')}
-                    className="flex h-10 items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-3 backdrop-blur-md transition-all active:scale-95"
+                    className="flex h-10 items-center gap-1.5 rounded-full border border-white/30 bg-white/20 px-2.5 sm:px-3 backdrop-blur-md transition-all active:scale-95"
                   >
                     <span className="material-symbols-outlined text-sm text-[#003642]">contactless</span>
                     <span className="text-[11px] font-semibold text-[#003642]">NFC</span>
@@ -666,7 +666,7 @@ export default function HomePage() {
                 </div>
                 <button
                   aria-expanded={detailsOpen}
-                  className="flex items-center gap-2 rounded-full bg-[#003642] pl-5 pr-7 py-2 text-sm font-bold text-[#4cd6fb] transition-all hover:opacity-90 active:scale-95"
+                  className="flex items-center gap-1.5 rounded-full bg-[#003642] px-4 py-2 text-sm font-bold text-[#4cd6fb] transition-all hover:opacity-90 active:scale-95 sm:gap-2 sm:pl-5 sm:pr-7"
                   onClick={() => setDetailsOpen((open) => !open)}
                   type="button"
                 >

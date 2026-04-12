@@ -6,6 +6,7 @@ const P = {
   restaurant: '/promo/restaurant.jpg',
   goldCard: '/promo/gold-card.jpg',
   piggy: '/promo/piggy.jpg',
+  microloanMoney: '/promo/microloan-money.png',
   family: '/promo/family.jpg',
   supermarket: '/promo/supermarket.jpg',
   fruits: '/promo/fruits.jpg',
@@ -25,8 +26,8 @@ export const SPECIAL_OFFERS = [
     title: 'Микрозайм: фиксированные 24% годовых',
     description:
       'Оформите микрозайм в сумах: фиксированная ставка 24% годовых на весь срок, без скрытых комиссий за оформление в демо-сценарии. Зачисление — только на ваши карты и счета Bank of Recreate в UZS; выбор из списка в приложении. Сумма от 100 000 до 100 000 000 UZS.',
-    image: P.piggy,
-    imageAlt: 'накопления и займ',
+    image: P.microloanMoney,
+    imageAlt: 'микрозайм деньги',
     coverImageClass: 'opacity-50',
     detailHeroClass: 'h-[13rem] sm:h-52',
   },

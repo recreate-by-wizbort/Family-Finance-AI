@@ -88,6 +88,16 @@ function parseMessageActions(text) {
       navActions.push({ label: label.trim(), path: path.trim() })
       return ''
     })
+    .replace(/\[([^|\]\n]{3,}?)\s*\|\s*(\/[^\]\s]+)\]/g, (_, label, path) => {
+      navActions.push({ label: label.trim(), path: path.trim() })
+      return ''
+    })
+    .replace(/^[ \t]*([^\n|]{3,}?)\s*\|\s*(\/[a-z][^\s]*)\s*$/gm, (match, label, path) => {
+      const trimmed = label.trim()
+      if (/^[\d.),\-]/.test(trimmed) || /^https?:/.test(trimmed)) return match
+      navActions.push({ label: trimmed, path: path.trim() })
+      return ''
+    })
     .replace(/\[КНОПКА:\s*([^\]]+)\]/gi, (_, label) => {
       actions.push(label.trim())
       return ''
