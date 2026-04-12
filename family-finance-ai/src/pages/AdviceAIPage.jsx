@@ -176,6 +176,25 @@ function sanitizeAssistantResponse(rawText) {
 
   text = text.replace(/\[\s*КНОПКА:\s*/g, '[КНОПКА: ')
 
+  text = text.replace(/\*\*([^*]+)\*\*/g, '«$1»')
+  text = text.replace(/(?:^|\n)[ \t]*(?:[*\-•])[ \t]+/g, (match) => {
+    const nl = match.startsWith('\n') ? '\n' : ''
+    return nl
+  })
+  const numberedLines = []
+  let counter = 0
+  for (const line of text.split('\n')) {
+    const stripped = line.trimStart()
+    if (/^\S/.test(stripped) && !/^\d+[.)]\s/.test(stripped)) counter = 0
+    if (/^(?:[*\-•])\s/.test(stripped)) {
+      counter++
+      numberedLines.push(`${counter}. ${stripped.replace(/^[*\-•]\s+/, '')}`)
+    } else {
+      numberedLines.push(line)
+    }
+  }
+  text = numberedLines.join('\n')
+
   return text || 'Не удалось сформировать ответ. Попробуйте переформулировать вопрос.'
 }
 
@@ -1114,7 +1133,9 @@ export default function AdviceAIPage() {
 
     // Кнопки [КНОПКА: …] тоже обрабатываем через FAQ/скрипты — без вызова AI (ключ не нужен).
     const faqMatch = matchFAQ(q)
-    if (faqMatch) {
+    const lastAssistantMsg = [...historyForAI].reverse().find((m) => m.role === 'assistant')
+    const faqAlreadyGiven = faqMatch && lastAssistantMsg && lastAssistantMsg.text === faqMatch.r
+    if (faqMatch && !faqAlreadyGiven) {
       await sleep(responseDelayMs)
       setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: faqMatch.r }])
       setAskedClarification(false)
