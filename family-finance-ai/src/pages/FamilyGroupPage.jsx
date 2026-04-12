@@ -21,6 +21,12 @@ import { addToPresetGoalSaved, appendGoalTransaction } from '../utils/goalFinanc
 import { loadUserCreatedGoals, saveUserCreatedGoals } from '../utils/userGoalsPersist'
 import { formatGroupedAmountInput, parseGroupedAmountString } from '../utils/amountInputFormat'
 import { aggregateFamilyReserveContributions } from '../utils/familyReserveContributionAnalytics'
+import {
+  getPeriodLabel,
+  groupItemsByPeriod,
+  PERIOD_FILTER_OPTIONS,
+} from '../utils/periodGrouping.js'
+import { isMobileDevice } from '../utils/isMobileDevice.js'
 import { FAMILY_MEMBERS } from '../mockData.js'
 import {
   RESERVE_DONUT_ICON_BADGE_DIAMETER,
@@ -29,6 +35,13 @@ import {
 
 const INVITE_LINK = 'https://vault.family/join/xK92Lp'
 const PANEL_ANIM_MS = 320
+
+/** «Призрачные» полукольца по бокам диаграммы резерва — визуальная подсказка свайпа (как на мониторинге). */
+const RESERVE_CHART_SIDE_PREVIEW_SIZE = 250
+/** Ближе к основному кольцу, чем на мониторинге (-210), чтобы намёк на свайп читался рядом с дугой. */
+const RESERVE_CHART_SIDE_PREVIEW_OFFSET = -132
+const RESERVE_CHART_SIDE_RING_MASK =
+  'radial-gradient(circle, transparent 0 73px, #000 74px 101px, transparent 102px)'
 
 /** Единая оболочка карточек на странице семьи (как блок «Аналитика»). */
 const FAMILY_CARD_SHELL = 'relative overflow-hidden rounded-[32px] bg-[#0d1c32] p-6 md:p-8'
@@ -637,15 +650,6 @@ function reserveDonutInSegments(snapshot, members) {
       segs.push({ category: `in_${m.id}`, label: m.name, amount: inUzs, color: m.color, icon: 'person' })
     }
   }
-  if (snapshot.unassignedInUzs > 0) {
-    segs.push({
-      category: 'in_other',
-      label: 'Прочие пополнения',
-      amount: snapshot.unassignedInUzs,
-      color: '#94a3b8',
-      icon: 'credit_card',
-    })
-  }
   return segs
 }
 
@@ -672,21 +676,55 @@ function reserveDonutOutSegments(snapshot, members) {
 /** Аналитика пополнений и снятий семейного резерва по участникам (история резерва). */
 function ContributionsAnalyticsPanel({ open, onClose, entries, members }) {
   const [donutFlow, setDonutFlow] = useState('in')
+  const [periodMode, setPeriodMode] = useState('month')
+  const [selectedPeriodKey, setSelectedPeriodKey] = useState(null)
+  const swipeStartRef = useRef({ x: 0, y: 0, active: false })
+
+  const useSwipeNavigation = useMemo(() => isMobileDevice(), [])
+  const showDesktopArrows = !useSwipeNavigation
 
   useEffect(() => {
     if (!open) return
     setDonutFlow('in')
+    setPeriodMode('month')
+    setSelectedPeriodKey(null)
   }, [open])
 
+  const groupedByPeriod = useMemo(() => groupItemsByPeriod(entries, periodMode), [entries, periodMode])
+
+  const periodKeys = useMemo(() => Array.from(groupedByPeriod.keys()).sort(), [groupedByPeriod])
+
+  const selectedPeriodIndex = useMemo(() => {
+    if (periodKeys.length === 0) {
+      return 0
+    }
+    if (selectedPeriodKey == null) {
+      return periodKeys.length - 1
+    }
+    const found = periodKeys.indexOf(selectedPeriodKey)
+    return found >= 0 ? found : periodKeys.length - 1
+  }, [periodKeys, selectedPeriodKey])
+
+  const filteredEntries = useMemo(() => {
+    const key = periodKeys[selectedPeriodIndex]
+    if (!key) {
+      return []
+    }
+    return groupedByPeriod.get(key) ?? []
+  }, [groupedByPeriod, periodKeys, selectedPeriodIndex])
+
   const snapshot = useMemo(
-    () => aggregateFamilyReserveContributions(entries, members),
-    [entries, members],
+    () => aggregateFamilyReserveContributions(filteredEntries, members),
+    [filteredEntries, members],
   )
 
-  const monthCenterLabel = useMemo(() => {
-    const raw = new Date().toLocaleDateString('ru-RU', { month: 'long' })
-    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Период'
-  }, [])
+  const centerLabel = useMemo(() => {
+    const key = periodKeys[selectedPeriodIndex]
+    if (!key) {
+      return 'Период'
+    }
+    return getPeriodLabel(key, periodMode)
+  }, [periodKeys, selectedPeriodIndex, periodMode])
 
   const donutSegments = useMemo(() => {
     if (donutFlow === 'in') {
@@ -717,6 +755,73 @@ function ContributionsAnalyticsPanel({ open, onClose, entries, members }) {
         : 'border-transparent bg-[#0d1c32] text-[#869398] hover:border-[#4cd6fb]/20'
     }`
 
+  const periodPillClass = (active) =>
+    `rounded-full px-5 py-1 text-xs font-bold transition sm:px-9 sm:text-base ${
+      active
+        ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+        : 'text-[#bcc9ce] hover:text-white'
+    }`
+
+  const hasPrevPeriod = selectedPeriodIndex > 0
+  const hasNextPeriod = selectedPeriodIndex < periodKeys.length - 1
+
+  const goPrevPeriod = () => {
+    if (!hasPrevPeriod) return
+    setSelectedPeriodKey(periodKeys[selectedPeriodIndex - 1] ?? null)
+  }
+
+  const goNextPeriod = () => {
+    if (!hasNextPeriod) return
+    setSelectedPeriodKey(periodKeys[selectedPeriodIndex + 1] ?? null)
+  }
+
+  const canGoPrev = hasPrevPeriod
+  const canGoNext = hasNextPeriod
+
+  const handleChartTouchStart = (event) => {
+    if (!useSwipeNavigation) {
+      return
+    }
+    const touch = event.changedTouches?.[0]
+    if (!touch) {
+      return
+    }
+    swipeStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      active: true,
+    }
+  }
+
+  const handleChartTouchEnd = (event) => {
+    if (!useSwipeNavigation || !swipeStartRef.current.active) {
+      return
+    }
+    const touch = event.changedTouches?.[0]
+    if (!touch) {
+      swipeStartRef.current.active = false
+      return
+    }
+    const deltaX = touch.clientX - swipeStartRef.current.x
+    const deltaY = touch.clientY - swipeStartRef.current.y
+    swipeStartRef.current.active = false
+
+    const horizontalThreshold = 44
+    const mostlyHorizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.2
+
+    if (Math.abs(deltaX) < horizontalThreshold || !mostlyHorizontal) {
+      return
+    }
+
+    if (deltaX < 0 && canGoNext) {
+      goNextPeriod()
+      return
+    }
+    if (deltaX > 0 && canGoPrev) {
+      goPrevPeriod()
+    }
+  }
+
   return (
     <BottomPanel
       open={open}
@@ -725,8 +830,9 @@ function ContributionsAnalyticsPanel({ open, onClose, entries, members }) {
       title="Аналитика вкладов"
     >
       <p className="mb-4 text-sm leading-relaxed text-[#bcc9ce]">
-        Доли взносов и выводов из семейного резерва. Переключите «Внесено» или «Выведено» — диаграмма и карточки ниже
-        обновятся.
+        Доли взносов и выводов за выбранный период. На компьютере — стрелки у диаграммы; на телефоне — свайп
+        влево/вправо; сбоку от кольца видны полупрозрачные «соседние» кольца — намёк, что период можно перелистнуть.
+        «Внесено» / «Выведено» переключает разбивку. Неделя, месяц и год — под итоговой суммой.
       </p>
 
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-[#869398]">Диаграмма</p>
@@ -739,11 +845,133 @@ function ContributionsAnalyticsPanel({ open, onClose, entries, members }) {
         </button>
       </div>
 
-      <FamilyReserveContributionsDonut
-        segments={donutSegments}
-        centerLabel={monthCenterLabel}
-        totalUzs={donutTotalUzs}
-      />
+      {/* Во всю ширину листа: иначе px-5 панели обрезает боковые «призрачные» кольца-подсказки свайпа */}
+      <div className="-mx-5 mb-2">
+      <div
+        className="relative mx-auto w-full max-w-[min(100%,620px)] overflow-x-visible overflow-y-visible"
+        onTouchEnd={handleChartTouchEnd}
+        onTouchStart={handleChartTouchStart}
+        style={useSwipeNavigation ? { touchAction: 'pan-y' } : undefined}
+      >
+        {useSwipeNavigation && hasPrevPeriod ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 z-0"
+            style={{
+              left: `${RESERVE_CHART_SIDE_PREVIEW_OFFSET}px`,
+              height: `${RESERVE_CHART_SIDE_PREVIEW_SIZE}px`,
+              width: `${RESERVE_CHART_SIDE_PREVIEW_SIZE}px`,
+              transform: 'translateY(-50%)',
+              opacity: 0.45,
+            }}
+          >
+            <div
+              className="absolute inset-0 rounded-full bg-[#6d7688]/65"
+              style={{
+                WebkitMask: RESERVE_CHART_SIDE_RING_MASK,
+                mask: RESERVE_CHART_SIDE_RING_MASK,
+              }}
+            />
+          </div>
+        ) : null}
+        {useSwipeNavigation && hasNextPeriod ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 z-0"
+            style={{
+              right: `${RESERVE_CHART_SIDE_PREVIEW_OFFSET}px`,
+              height: `${RESERVE_CHART_SIDE_PREVIEW_SIZE}px`,
+              width: `${RESERVE_CHART_SIDE_PREVIEW_SIZE}px`,
+              transform: 'translateY(-50%)',
+              opacity: 0.45,
+            }}
+          >
+            <div
+              className="absolute inset-0 rounded-full bg-[#6d7688]/65"
+              style={{
+                WebkitMask: RESERVE_CHART_SIDE_RING_MASK,
+                mask: RESERVE_CHART_SIDE_RING_MASK,
+              }}
+            />
+          </div>
+        ) : null}
+        {showDesktopArrows ? (
+          <>
+            <button
+              aria-label="Предыдущий период"
+              className={`absolute left-0 top-[38%] z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border transition-all md:-translate-x-1/2 ${
+                hasPrevPeriod
+                  ? 'border-[#4cd6fb]/25 bg-[#112036] text-[#4cd6fb] hover:bg-[#1c2a41] active:scale-95'
+                  : 'cursor-not-allowed border-[#27354c] bg-[#112036]/40 text-[#546074]'
+              }`}
+              disabled={!hasPrevPeriod}
+              onClick={goPrevPeriod}
+              type="button"
+            >
+              <span className="material-symbols-outlined">chevron_left</span>
+            </button>
+            <button
+              aria-label="Следующий период"
+              className={`absolute right-0 top-[38%] z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border transition-all md:translate-x-1/2 ${
+                hasNextPeriod
+                  ? 'border-[#4cd6fb]/25 bg-[#112036] text-[#4cd6fb] hover:bg-[#1c2a41] active:scale-95'
+                  : 'cursor-not-allowed border-[#27354c] bg-[#112036]/40 text-[#546074]'
+              }`}
+              disabled={!hasNextPeriod}
+              onClick={goNextPeriod}
+              type="button"
+            >
+              <span className="material-symbols-outlined">chevron_right</span>
+            </button>
+          </>
+        ) : null}
+        <div className="relative z-10 mx-auto">
+          <FamilyReserveContributionsDonut
+            segments={donutSegments}
+            centerLabel={centerLabel}
+            totalUzs={donutTotalUzs}
+            hideTotal
+            centerLabelClassName={
+              periodMode === 'week' ? 'max-w-[12.5rem] px-1 text-base sm:text-lg' : 'text-2xl'
+            }
+          />
+        </div>
+      </div>
+      </div>
+
+      <p className="mt-4 text-center font-headline text-2xl font-extrabold text-[#d6e3ff]">
+        <UzsAmount
+          as="span"
+          className="inline-flex justify-center"
+          compact
+          compactFrom={1_000_000}
+          value={String(Math.round(donutTotalUzs || 0))}
+        />
+      </p>
+
+      <div className="mb-4 mt-3 flex justify-center">
+        <div className="inline-grid w-full max-w-[280px] grid-cols-3 gap-1 rounded-full bg-[#1b2433] p-1 sm:max-w-none">
+          {PERIOD_FILTER_OPTIONS.map((option) => {
+            const isActive = option.id === periodMode
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={periodPillClass(isActive)}
+                onClick={() => {
+                  if (periodMode === option.id) {
+                    return
+                  }
+                  setPeriodMode(option.id)
+                  setSelectedPeriodKey(null)
+                }}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       <p className="mb-2 mt-2 text-[10px] font-semibold uppercase tracking-widest text-[#869398]">
         {donutFlow === 'in' ? 'Кто сколько внёс' : 'Кто сколько получил / куда выведено'}

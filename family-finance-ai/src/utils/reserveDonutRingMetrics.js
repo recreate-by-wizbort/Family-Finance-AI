@@ -32,6 +32,15 @@ function describeArcPath(cx, cy, radius, startAngle, endAngle, isClockwise = tru
   return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${end.x} ${end.y}`
 }
 
+/** Полный оборот: одна SVG-дуга 0→360° даёт совпадающие точки и не рисуется — две дуги по 180°. */
+function describeFullRingPath(cx, cy, radius, startAngleDeg, isClockwise) {
+  const midDeg = (startAngleDeg + 180) % 360
+  const pStart = pointOnCircle(cx, cy, radius, startAngleDeg)
+  const pMid = pointOnCircle(cx, cy, radius, midDeg)
+  const sweepFlag = isClockwise ? 1 : 0
+  return `M ${pStart.x} ${pStart.y} A ${radius} ${radius} 0 1 ${sweepFlag} ${pMid.x} ${pMid.y} A ${radius} ${radius} 0 1 ${sweepFlag} ${pStart.x} ${pStart.y}`
+}
+
 const MAIN_RING_RADIUS = 99
 const MAIN_RING_STROKE_WIDTH = 34
 const PERCENT_LABEL_RADIUS = MAIN_RING_RADIUS + 42
@@ -143,8 +152,20 @@ export function buildReserveDonutRingMetrics(segments) {
 
     const startAngleDeg = toRingAngle(start, RING_DRAW_CLOCKWISE)
     const endAngleDeg = toRingAngle(end, RING_DRAW_CLOCKWISE)
-    const arcSweepDeg = ((endAngleDeg - startAngleDeg) % 360 + 360) % 360
     const span = end - start
+    let arcSweepDeg = ((endAngleDeg - startAngleDeg) % 360 + 360) % 360
+    /** toRingAngle(100) = 360° и совпадает с 0° → arcSweepDeg становится 0, линия пропадает. */
+    const isFullCircleLayout = span >= 99.5
+    let arcPath
+    let showArc
+    if (isFullCircleLayout) {
+      arcSweepDeg = 360
+      arcPath = describeFullRingPath(center, center, arcRadius, startAngleDeg, RING_DRAW_CLOCKWISE)
+      showArc = true
+    } else {
+      arcPath = describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg, RING_DRAW_CLOCKWISE)
+      showArc = arcSweepDeg > 0.02
+    }
     const rawIconPercent = start + span * ICON_ON_SEGMENT_FRACTION
     const iconPercent =
       span > 1e-9 ? Math.min(Math.max(rawIconPercent, start + 1e-9), end - 1e-9) : start
@@ -161,14 +182,14 @@ export function buildReserveDonutRingMetrics(segments) {
       labelAngleDeg: iconAngleDeg,
       iconAngleDeg,
       arcSweepDeg,
-      arcPath: describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg, RING_DRAW_CLOCKWISE),
+      arcPath,
       labelX: center,
       labelY: center,
       adjustedLabelY: center,
       iconX: iconPoint.x,
       iconY: iconPoint.y,
       showPercent: true,
-      showArc: arcSweepDeg > 0.02,
+      showArc,
     }
   })
 

@@ -86,5 +86,25 @@ export function aggregateFamilyReserveContributions(entries, members) {
     totalOutUzs += b.outUzs
   }
 
+  /** Пополнения без явного участника — только члены семьи; относим к владельцу группы. */
+  if (unassignedInUzs > 0 && members.length > 0) {
+    const owner = members.find((m) => m.role === 'owner') ?? members[0]
+    if (owner?.id && byMember[owner.id]) {
+      byMember[owner.id].inUzs += unassignedInUzs
+      unassignedInUzs = 0
+    } else {
+      const n = members.length
+      let rest = unassignedInUzs
+      const each = Math.floor(rest / n)
+      let remainder = rest - each * n
+      for (const m of members) {
+        const add = each + (remainder > 0 ? 1 : 0)
+        if (remainder > 0) remainder -= 1
+        byMember[m.id].inUzs += add
+      }
+      unassignedInUzs = 0
+    }
+  }
+
   return { byMember, goalsOutUzs, unassignedInUzs, totalInUzs, totalOutUzs }
 }

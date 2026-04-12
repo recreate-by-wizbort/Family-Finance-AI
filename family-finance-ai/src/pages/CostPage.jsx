@@ -18,6 +18,12 @@ import { last4FromPan } from '../utils/buildHomeUserCardsList.js'
 import { getMergedRawMovementsForCard, withBalanceAfter } from '../utils/cardMovements.js'
 import { loadDepositCardMovements } from '../utils/depositCardMovements.js'
 import { getPaymentCardsTotalUzs } from '../utils.js'
+import {
+  getPeriodLabel,
+  groupTransactionsByPeriod,
+  PERIOD_FILTER_OPTIONS,
+} from '../utils/periodGrouping.js'
+import { isMobileDevice } from '../utils/isMobileDevice.js'
 import { isSessionUnlocked } from '../utils/sessionLock.js'
 
 const HISTORY_SHEET_ANIM_MS = 320
@@ -30,89 +36,6 @@ function ruOperationsCountLabel(n) {
   if (v1 === 1) return `${n} операция`
   if (v1 >= 2 && v1 <= 4) return `${n} операции`
   return `${n} операций`
-}
-
-function toMonthLabel(monthKey) {
-  const [year, month] = monthKey.split('-').map(Number)
-  const date = new Date(year, month - 1, 1)
-  const monthLabel = new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(date)
-  return monthLabel[0].toUpperCase() + monthLabel.slice(1)
-}
-
-const PERIOD_FILTER_OPTIONS = [
-  { id: 'week', label: 'Нед' },
-  { id: 'month', label: 'Мес' },
-  { id: 'year', label: 'Год' },
-]
-
-function toIsoWeekInfo(date) {
-  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const day = utcDate.getUTCDay() || 7
-  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day)
-  const isoYear = utcDate.getUTCFullYear()
-  const yearStart = new Date(Date.UTC(isoYear, 0, 1))
-  const week = Math.ceil(((utcDate - yearStart) / 86400000 + 1) / 7)
-  return { isoYear, week }
-}
-
-function getPeriodKeyFromTimestamp(timestamp, periodMode) {
-  const date = new Date(timestamp)
-
-  if (periodMode === 'year') {
-    return String(date.getFullYear())
-  }
-
-  if (periodMode === 'week') {
-    const { isoYear, week } = toIsoWeekInfo(date)
-    return `${isoYear}-W${String(week).padStart(2, '0')}`
-  }
-
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  return `${date.getFullYear()}-${month}`
-}
-
-function getIsoWeekStartDate(isoYear, week) {
-  const jan4 = new Date(Date.UTC(isoYear, 0, 4))
-  const jan4Day = jan4.getUTCDay() || 7
-  const week1Monday = new Date(jan4)
-  week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1)
-  const result = new Date(week1Monday)
-  result.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7)
-  return result
-}
-
-function getPeriodLabel(periodKey, periodMode) {
-  if (periodMode === 'year') {
-    return periodKey
-  }
-
-  if (periodMode === 'week') {
-    const [yearPart, weekPartRaw] = periodKey.split('-W')
-    const isoYear = Number(yearPart)
-    const week = Number(weekPartRaw)
-    const startUtc = getIsoWeekStartDate(isoYear, week)
-    const endUtc = new Date(startUtc)
-    endUtc.setUTCDate(startUtc.getUTCDate() + 6)
-    const startLabel = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(startUtc)
-    const endLabel = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(endUtc)
-    return `${startLabel} - ${endLabel}`
-  }
-
-  return toMonthLabel(periodKey)
-}
-
-function groupTransactionsByPeriod(transactions, periodMode) {
-  const groups = new Map()
-  for (const tx of transactions || []) {
-    const key = getPeriodKeyFromTimestamp(tx.timestamp, periodMode)
-    const rows = groups.get(key)
-    if (rows) {
-      rows.push(tx)
-    } else {
-      groups.set(key, [tx])
-    }
-  }
-  return groups
 }
 
 function roundPercent(value) {
@@ -152,16 +75,12 @@ function describeArcPath(cx, cy, radius, startAngle, endAngle, isClockwise = tru
   return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${end.x} ${end.y}`
 }
 
-function isMobileDevice() {
-  if (typeof navigator === 'undefined') {
-    return false
-  }
-
-  const ua = navigator.userAgent || ''
-  const mobileUA = /Android|iPhone|iPad|iPod|Mobile|Windows Phone|webOS|BlackBerry/i.test(ua)
-  const ipadDesktopUA = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1
-
-  return mobileUA || ipadDesktopUA
+function describeFullRingPath(cx, cy, radius, startAngleDeg, isClockwise) {
+  const midDeg = (startAngleDeg + 180) % 360
+  const pStart = pointOnCircle(cx, cy, radius, startAngleDeg)
+  const pMid = pointOnCircle(cx, cy, radius, midDeg)
+  const sweepFlag = isClockwise ? 1 : 0
+  return `M ${pStart.x} ${pStart.y} A ${radius} ${radius} 0 1 ${sweepFlag} ${pMid.x} ${pMid.y} A ${radius} ${radius} 0 1 ${sweepFlag} ${pStart.x} ${pStart.y}`
 }
 
 const CATEGORY_ICON_MAP = {
@@ -680,8 +599,19 @@ function buildRingMetricsFromSegments(segments, isUnlocked) {
     const iconRadius = MAIN_RING_RADIUS
     const startAngleDeg = toRingAngle(arcStart, RING_DRAW_CLOCKWISE)
     const endAngleDeg = toRingAngle(arcEnd, RING_DRAW_CLOCKWISE)
-    const arcSweepDeg = ((endAngleDeg - startAngleDeg) % 360 + 360) % 360
     const span = arcEnd - arcStart
+    let arcSweepDeg = ((endAngleDeg - startAngleDeg) % 360 + 360) % 360
+    const isFullCircleLayout = span >= 99.5
+    let arcPath
+    let showArc
+    if (isFullCircleLayout) {
+      arcSweepDeg = 360
+      arcPath = describeFullRingPath(center, center, arcRadius, startAngleDeg, RING_DRAW_CLOCKWISE)
+      showArc = true
+    } else {
+      arcPath = describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg, RING_DRAW_CLOCKWISE)
+      showArc = arcSweepDeg > 0.02
+    }
     const rawIconPercent = arcStart + span * ICON_ON_SEGMENT_FRACTION
     const iconPercent =
       span > 1e-9
@@ -698,14 +628,14 @@ function buildRingMetricsFromSegments(segments, isUnlocked) {
       labelAngleDeg: iconAngleDeg,
       iconAngleDeg,
       arcSweepDeg,
-      arcPath: describeArcPath(center, center, arcRadius, startAngleDeg, endAngleDeg, RING_DRAW_CLOCKWISE),
+      arcPath,
       labelX: center,
       labelY: center,
       adjustedLabelY: center,
       iconX: iconPoint.x,
       iconY: iconPoint.y,
       showPercent: true,
-      showArc: arcSweepDeg > 0.02,
+      showArc,
     }
   })
 

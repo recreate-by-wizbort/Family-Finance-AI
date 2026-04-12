@@ -10,6 +10,7 @@ export const RESERVE_HISTORY_MOCK = [
     title: 'Пополнение',
     detail: 'С карты «Премиум Mastercard» · MASTERCARD *0698',
     timestamp: '2026-04-11T15:30:00+05:00',
+    inMemberId: 'user_1',
   },
   {
     id: 'mock_apr_10',
@@ -63,6 +64,24 @@ export const RESERVE_HISTORY_MOCK = [
     title: 'Пополнение',
     detail: 'С карты «Золотая HUMO» · Андрей',
     timestamp: '2026-04-02T10:00:00+05:00',
+    inMemberId: 'user_1',
+  },
+  {
+    id: 'mock_mar_2',
+    kind: 'in',
+    amount: 450_000,
+    title: 'Пополнение',
+    detail: 'С карты Kapital Bank · Жена',
+    timestamp: '2026-03-22T16:20:00+05:00',
+    inMemberId: 'user_2',
+  },
+  {
+    id: 'mock_mar_1',
+    kind: 'in',
+    amount: 750_000,
+    title: 'Пополнение',
+    detail: 'С основной карты · Андрей · HUMO',
+    timestamp: '2026-03-05T09:00:00+05:00',
     inMemberId: 'user_1',
   },
 ]

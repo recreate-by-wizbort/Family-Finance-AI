@@ -15,7 +15,13 @@ const PERCENT_LABEL_BOX_WIDTH = 66
 /**
  * @param {Array<{ category: string, label: string, amount: number, color: string, icon?: string }>} segments
  */
-export default function FamilyReserveContributionsDonut({ segments, centerLabel, totalUzs }) {
+export default function FamilyReserveContributionsDonut({
+  segments,
+  centerLabel,
+  totalUzs,
+  centerLabelClassName,
+  hideTotal = false,
+}) {
   const chartSegments = useMemo(() => {
     const total = segments.reduce((s, x) => s + (Number(x.amount) || 0), 0)
     if (total <= 0) return []
@@ -44,8 +50,8 @@ export default function FamilyReserveContributionsDonut({ segments, centerLabel,
 
   if (metrics.length === 0) {
     return (
-      <div className="relative mx-auto mb-5 w-full max-w-[320px]">
-        <div className="relative aspect-square w-full overflow-hidden rounded-full">
+      <div className={`relative mx-auto w-full max-w-[320px] ${hideTotal ? 'mb-0' : 'mb-5'}`}>
+        <div className="relative mx-auto h-[320px] w-[320px] overflow-hidden rounded-full">
           <svg className="absolute inset-0" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg">
             <circle
               cx="160"
@@ -72,9 +78,9 @@ export default function FamilyReserveContributionsDonut({ segments, centerLabel,
   }
 
   return (
-    <div className="relative mx-auto mb-2 w-full max-w-[320px]">
+    <div className={`relative mx-auto w-full max-w-[320px] ${hideTotal ? 'mb-0' : 'mb-2'}`}>
       <div
-        className="relative aspect-square w-full overflow-hidden"
+        className="relative mx-auto h-[320px] w-[320px]"
         role="img"
         aria-label="Круговая диаграмма вкладов в семейный резерв"
       >
@@ -111,7 +117,11 @@ export default function FamilyReserveContributionsDonut({ segments, centerLabel,
         />
 
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
-          <span className="font-headline text-2xl font-extrabold capitalize leading-snug text-[#d6e3ff]">
+          <span
+            className={`font-headline font-extrabold capitalize leading-snug text-[#d6e3ff] ${
+              centerLabelClassName ?? 'text-2xl'
+            }`}
+          >
             {centerLabel}
           </span>
         </div>
@@ -171,9 +181,11 @@ export default function FamilyReserveContributionsDonut({ segments, centerLabel,
           ))}
       </div>
 
-      <p className="mt-4 text-center font-headline text-2xl font-extrabold text-[#d6e3ff]">
-        <UzsAmount as="span" className="inline-flex justify-center" compact compactFrom={1_000_000} value={String(Math.round(totalUzs || 0))} />
-      </p>
+      {hideTotal ? null : (
+        <p className="mt-4 text-center font-headline text-2xl font-extrabold text-[#d6e3ff]">
+          <UzsAmount as="span" className="inline-flex justify-center" compact compactFrom={1_000_000} value={String(Math.round(totalUzs || 0))} />
+        </p>
+      )}
     </div>
   )
 }
