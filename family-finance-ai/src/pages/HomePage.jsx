@@ -120,6 +120,29 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
+    if (location.state?.scrollToHomeTop !== true) {
+      return undefined
+    }
+    let cancelled = false
+    let innerRaf = 0
+    const outerRaf = requestAnimationFrame(() => {
+      innerRaf = requestAnimationFrame(() => {
+        if (cancelled) return
+        window.scrollTo(0, 0)
+        navigate(
+          { pathname: location.pathname, search: location.search, hash: location.hash },
+          { replace: true, state: {} },
+        )
+      })
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(outerRaf)
+      if (innerRaf) cancelAnimationFrame(innerRaf)
+    }
+  }, [location.hash, location.key, location.pathname, location.search, location.state, navigate])
+
+  useEffect(() => {
     const sp = new URLSearchParams(location.search)
     const action = sp.get('open')
     if (!action) return

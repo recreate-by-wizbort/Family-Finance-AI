@@ -114,6 +114,30 @@ function isMeaningfulActionLabel(label) {
   return !NON_ACTIONABLE_PATTERNS.some((p) => p.test(normalized))
 }
 
+/** Подписи [КНОПКА: …], которые должны вести на экран, а не в чат как новый вопрос */
+function actionButtonNavigateTarget(label) {
+  const n = String(label || '').toLowerCase().replace(/ё/g, 'е').trim()
+  if (!n) return null
+  if (
+    /посмотреть\s+мониторинг/.test(n)
+    || /мониторинг\s+расходов/.test(n)
+    || /^открыть\s+мониторинг/.test(n)
+    || /^перейти\s+(на\s+)?мониторинг/.test(n)
+  ) {
+    return { path: '/monitoring', state: { focusMonitoringDiagram: true } }
+  }
+  if (
+    /^главная\s+страница$/.test(n)
+    || /^на\s+главную$/.test(n)
+    || /^домашняя\s+страница$/.test(n)
+    || /перейти\s+на\s+главную/.test(n)
+    || /^открыть\s+главную/.test(n)
+  ) {
+    return { path: '/home', state: { scrollToHomeTop: true } }
+  }
+  return null
+}
+
 function computeResponseDelayMs(inputText) {
   return Math.min(1000, Math.max(180, String(inputText || '').trim().length * 14))
 }
@@ -1360,7 +1384,11 @@ export default function AdviceAIPage() {
                         <button
                           key={`${msg.id}-${label}`}
                           type="button"
-                          onClick={() => runQuestion(label, { source: 'action' })}
+                          onClick={() => {
+                            const target = actionButtonNavigateTarget(label)
+                            if (target) navigate(target.path, { state: target.state })
+                            else runQuestion(label, { source: 'action' })
+                          }}
                           disabled={isLoading}
                           className="rounded-full border border-[#4cd6fb]/45 bg-[#112036] px-3 py-1.5 text-xs font-semibold text-[#58d6f1] transition hover:border-[#4cd6fb] hover:bg-[#1b2a42] disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -1371,7 +1399,18 @@ export default function AdviceAIPage() {
                         <button
                           key={`${msg.id}-nav-${nav.path}`}
                           type="button"
-                          onClick={() => navigate(nav.path)}
+                          onClick={() => {
+                            const p = String(nav.path || '').trim()
+                            if (p === '/monitoring' || p.startsWith('/monitoring?')) {
+                              navigate(p, { state: { focusMonitoringDiagram: true } })
+                              return
+                            }
+                            if (p === '/home' || p.startsWith('/home?') || p.startsWith('/home#')) {
+                              navigate(p, { state: { scrollToHomeTop: true } })
+                              return
+                            }
+                            navigate(nav.path)
+                          }}
                           className="flex items-center gap-1.5 rounded-full border border-[#00b4d8]/60 bg-gradient-to-r from-[#0d2a40] to-[#112036] px-3 py-1.5 text-xs font-semibold text-[#4cd6fb] transition hover:border-[#4cd6fb] hover:brightness-110"
                         >
                           <span className="material-symbols-outlined text-sm">arrow_forward</span>

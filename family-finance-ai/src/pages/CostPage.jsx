@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import AppBottomNav from '../components/AppBottomNav.jsx'
 import SubpageCloseButton, { SUBPAGE_CLOSE_BUTTON_CLASS } from '../components/SubpageCloseButton.jsx'
 import AppTopBar from '../components/AppTopBar.jsx'
@@ -1011,6 +1011,7 @@ export default function CostPage({
 }) {
   const isUnlocked = isSessionUnlocked()
   const navigate = useNavigate()
+  const location = useLocation()
   const isMonitoringMode = mode === 'monitoring'
   const flowMode = mode === 'credit' ? 'credit' : 'debit'
 
@@ -1043,6 +1044,8 @@ export default function CostPage({
   const linkedDepositMovements = useMemo(() => loadDepositCardMovements(), [])
   const accountFilterDropdownRef = useRef(null)
   const transferFilterDropdownRef = useRef(null)
+  /** Прокрутка к кольцу при входе с чата (см. location.state.focusMonitoringDiagram) */
+  const monitoringDiagramAnchorRef = useRef(null)
 
   useEffect(() => {
     let closeTimer
@@ -1545,6 +1548,34 @@ export default function CostPage({
   }, [selectedPeriodIndex])
 
   useEffect(() => {
+    if (!isMonitoringMode || embedded || location.state?.focusMonitoringDiagram !== true) {
+      return undefined
+    }
+    let cancelled = false
+    let innerRaf = 0
+    const outerRaf = requestAnimationFrame(() => {
+      innerRaf = requestAnimationFrame(() => {
+        if (cancelled) return
+        const el = monitoringDiagramAnchorRef.current
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }
+        navigate(
+          { pathname: location.pathname, search: location.search, hash: location.hash },
+          { replace: true, state: {} },
+        )
+      })
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(outerRaf)
+      if (innerRaf) cancelAnimationFrame(innerRaf)
+    }
+  }, [embedded, isMonitoringMode, location.hash, location.key, location.pathname, location.search, location.state, navigate])
+
+  useEffect(() => {
     if (!historySheetOpen) {
       setHistoryDetailMovementId(null)
     }
@@ -1785,34 +1816,6 @@ export default function CostPage({
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => navigate('/income')}
-                className="min-w-0 overflow-hidden rounded-2xl bg-[#0d1c32] px-3 py-3 text-left transition hover:bg-[#112036] active:scale-[0.99] sm:px-4 sm:py-3.5"
-              >
-                <div className="min-w-0 text-xl font-extrabold leading-tight tracking-tight text-[#d6e3ff] sm:text-2xl">
-                  <UzsAmount
-                    as="span"
-                    className="block min-w-0 break-words"
-                    compact
-                    compactFrom={1_000_000}
-                    value={String(Math.round(selectedSnapshot.creditTotal))}
-                  />
-                </div>
-                <div className="mt-2 text-base font-semibold text-[#d6e3ff] sm:text-[1.05rem]">Поступления</div>
-                <div className="mt-2.5 flex h-3.5 w-full min-w-0 overflow-hidden rounded-full sm:h-4">
-                  {creditMiniBar.map((segment) => (
-                    <span
-                      key={`mini-credit-${segment.category}`}
-                      style={{
-                        backgroundColor: segment.color,
-                        width: `${segment.fillPct}%`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => navigate('/cost')}
                 className="min-w-0 overflow-hidden rounded-2xl bg-[#0d1c32] px-3 py-3 text-left transition hover:bg-[#112036] active:scale-[0.99] sm:px-4 sm:py-3.5"
               >
@@ -1830,6 +1833,34 @@ export default function CostPage({
                   {debitMiniBar.map((segment) => (
                     <span
                       key={`mini-debit-${segment.category}`}
+                      style={{
+                        backgroundColor: segment.color,
+                        width: `${segment.fillPct}%`,
+                      }}
+                    />
+                  ))}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/income')}
+                className="min-w-0 overflow-hidden rounded-2xl bg-[#0d1c32] px-3 py-3 text-left transition hover:bg-[#112036] active:scale-[0.99] sm:px-4 sm:py-3.5"
+              >
+                <div className="min-w-0 text-xl font-extrabold leading-tight tracking-tight text-[#d6e3ff] sm:text-2xl">
+                  <UzsAmount
+                    as="span"
+                    className="block min-w-0 break-words"
+                    compact
+                    compactFrom={1_000_000}
+                    value={String(Math.round(selectedSnapshot.creditTotal))}
+                  />
+                </div>
+                <div className="mt-2 text-base font-semibold text-[#d6e3ff] sm:text-[1.05rem]">Поступления</div>
+                <div className="mt-2.5 flex h-3.5 w-full min-w-0 overflow-hidden rounded-full sm:h-4">
+                  {creditMiniBar.map((segment) => (
+                    <span
+                      key={`mini-credit-${segment.category}`}
                       style={{
                         backgroundColor: segment.color,
                         width: `${segment.fillPct}%`,
@@ -2092,7 +2123,9 @@ export default function CostPage({
           ) : null}
 
           <div
-            className="relative mx-auto max-w-[620px]"
+            ref={isMonitoringMode && !embedded ? monitoringDiagramAnchorRef : undefined}
+            id={isMonitoringMode && !embedded ? 'monitoring-diagram' : undefined}
+            className={`relative mx-auto max-w-[620px] ${isMonitoringMode && !embedded ? 'scroll-mt-28 sm:scroll-mt-32' : ''}`}
             onTouchEnd={handleChartTouchEnd}
             onTouchStart={handleChartTouchStart}
             style={useSwipeNavigation ? { touchAction: 'pan-y' } : undefined}
