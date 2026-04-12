@@ -761,7 +761,7 @@ export default function GoalPage() {
 
         <section className="mb-5">
           <button
-            className="inline-flex items-center gap-2 rounded-full border-2 border-[#fbbf24]/70 bg-gradient-to-br from-[#4cd6fb] to-[#00b4d8] px-5 py-2.5 text-sm font-bold text-[#00414f] shadow-[0_0_0_1px_rgba(251,191,36,0.35)] transition hover:brightness-110 active:scale-95"
+            className="inline-flex items-center gap-2 rounded-full border border-[#4cd6fb]/35 bg-gradient-to-br from-[#4cd6fb] to-[#00b4d8] px-5 py-2.5 text-sm font-bold text-[#00414f] shadow-lg shadow-[#4cd6fb]/15 transition hover:brightness-110 active:scale-95"
             type="button"
             onClick={() => setAddOpen(true)}
           >
