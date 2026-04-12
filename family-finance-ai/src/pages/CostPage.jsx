@@ -469,6 +469,65 @@ function aggregateMonitoringInflow(transactions) {
   }, {})
 }
 
+/** Ключ сегмента мониторинга для исходящей операции (логика как в aggregateMonitoringOutflow). */
+function monitoringOutflowCategoryKey(transaction) {
+  if (transaction.direction !== 'out') return null
+  if (transaction.kind === 'goal_topup') {
+    return 'goal_topup'
+  }
+  if (transaction.kind === 'deposit_topup') {
+    return 'deposit'
+  }
+  if (transaction.kind === 'currency_purchase') {
+    return 'currency_purchase'
+  }
+  if (transaction.kind === 'investment_contribution') {
+    return 'investments'
+  }
+  let key = transaction.category || 'other'
+  if (key === 'transfer_external') {
+    key = 'transfer'
+  }
+  if (!MONITORING_CATEGORY_KEYS.has(key)) {
+    key = 'other'
+  }
+  return key
+}
+
+/** Ключ сегмента мониторинга для входящей операции (логика как в aggregateMonitoringInflow). */
+function monitoringInflowCategoryKey(transaction) {
+  if (transaction.direction !== 'in') return null
+  let key = transaction.category || 'income'
+  if (key === 'transfer_external') {
+    key = 'transfer'
+  }
+  if (!MONITORING_CATEGORY_KEYS.has(key)) {
+    key = 'income'
+  }
+  return key
+}
+
+/**
+ * @param {'monitoring' | 'debit' | 'credit'} mode
+ */
+function filterTransactionsByMonitoringSegment(transactions, segmentCategory, mode) {
+  if (!segmentCategory || segmentCategory === 'card_balance') {
+    return []
+  }
+  const list = transactions || []
+  if (mode === 'monitoring') {
+    return list.filter(
+      (tx) =>
+        monitoringOutflowCategoryKey(tx) === segmentCategory ||
+        monitoringInflowCategoryKey(tx) === segmentCategory,
+    )
+  }
+  if (mode === 'debit') {
+    return list.filter((tx) => monitoringOutflowCategoryKey(tx) === segmentCategory)
+  }
+  return list.filter((tx) => monitoringInflowCategoryKey(tx) === segmentCategory)
+}
+
 function buildMonitoringSegments(totalsByCategory, balanceAmount, options = {}) {
   const { includeCardBalance = true } = options
   const totals = totalsByCategory || {}
@@ -716,7 +775,15 @@ function buildMonitoringCardForHistory(accountId) {
   }
 }
 
-function OperationsHistorySheet({ open, onClose, title, periodLabel, operations, onSelectOperation }) {
+function OperationsHistorySheet({
+  open,
+  onClose,
+  title,
+  periodLabel,
+  operations,
+  onSelectOperation,
+  overlayZIndexClass = 'z-[120]',
+}) {
   const [visible, setVisible] = useState(false)
   const [animating, setAnimating] = useState(false)
   const [dragOffset, setDragOffset] = useState(0)
@@ -801,7 +868,7 @@ function OperationsHistorySheet({ open, onClose, title, periodLabel, operations,
   }
 
   const sheet = (
-    <div className="fixed inset-0 z-[120] flex flex-col justify-end overscroll-none">
+    <div className={`fixed inset-0 flex flex-col justify-end overscroll-none ${overlayZIndexClass}`}>
       <div
         aria-hidden
         className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity ${
@@ -967,6 +1034,11 @@ export default function CostPage({
   const [transferFilterMenuMounted, setTransferFilterMenuMounted] = useState(false)
   const [transferFilterMenuEntered, setTransferFilterMenuEntered] = useState(false)
   const [historySheetOpen, setHistorySheetOpen] = useState(false)
+  const [categorySheet, setCategorySheet] = useState({
+    open: false,
+    category: null,
+    label: '',
+  })
   const [historyDetailMovementId, setHistoryDetailMovementId] = useState(null)
   const linkedDepositMovements = useMemo(() => loadDepositCardMovements(), [])
   const accountFilterDropdownRef = useRef(null)
@@ -1282,6 +1354,32 @@ export default function CostPage({
       ? selectedSnapshot.creditSegments
       : selectedSnapshot.debitSegments
 
+  const categorySheetOperations = useMemo(() => {
+    if (!categorySheet.open || !categorySheet.category || !isUnlocked) {
+      return []
+    }
+    if (categorySheet.category === 'card_balance') {
+      return []
+    }
+    const pool = isMonitoringMode
+      ? selectedSnapshot.transactions
+      : flowMode === 'credit'
+        ? selectedSnapshot.incomeTransactions
+        : selectedSnapshot.expenseTransactions
+    const segMode = isMonitoringMode ? 'monitoring' : flowMode === 'credit' ? 'credit' : 'debit'
+    const filtered = filterTransactionsByMonitoringSegment(pool, categorySheet.category, segMode)
+    return [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+  }, [
+    categorySheet.open,
+    categorySheet.category,
+    flowMode,
+    isMonitoringMode,
+    isUnlocked,
+    selectedSnapshot.expenseTransactions,
+    selectedSnapshot.incomeTransactions,
+    selectedSnapshot.transactions,
+  ])
+
   const isTransitioning = ringTransition != null
   const hasPrevPeriod = selectedPeriodIndex > 0
   const hasNextPeriod = selectedPeriodIndex < periodKeys.length - 1
@@ -1443,6 +1541,7 @@ export default function CostPage({
 
   useEffect(() => {
     setHistorySheetOpen(false)
+    setCategorySheet({ open: false, category: null, label: '' })
   }, [selectedPeriodIndex])
 
   useEffect(() => {
@@ -2221,15 +2320,37 @@ export default function CostPage({
             <div className="mt-8 grid w-full grid-cols-2 gap-1.5 sm:gap-2 md:gap-2.5">
               {visibleSegments.map((segment) => {
                 const listIcon = CATEGORY_ICON_MAP[segment.category] || CATEGORY_ICON_MAP.other
+                const isCardBalance = segment.category === 'card_balance'
+                const categoryClickable = isUnlocked && !isCardBalance
 
                 return (
-                  <div
+                  <button
                     key={segment.category}
-                    className="grid min-h-[2.625rem] w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-0 rounded-full border py-1 pl-1 pr-1.5 sm:min-h-[2.75rem] sm:gap-x-1.5 sm:py-1.5 sm:pl-1.5 sm:pr-2"
+                    type="button"
+                    disabled={!categoryClickable}
+                    aria-label={
+                      isCardBalance
+                        ? 'Остаток на картах — не список операций'
+                        : `Операции: ${segment.label}`
+                    }
+                    className={`grid min-h-[2.625rem] w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-0 rounded-full border py-1 pl-1 pr-1.5 text-left transition-[transform,opacity] sm:min-h-[2.75rem] sm:gap-x-1.5 sm:py-1.5 sm:pl-1.5 sm:pr-2 ${
+                      categoryClickable
+                        ? 'cursor-pointer active:scale-[0.99] hover:brightness-110'
+                        : 'cursor-default opacity-80'
+                    } disabled:pointer-events-none disabled:opacity-60`}
                     style={{
                       borderColor: `${segment.color}50`,
                       background: `linear-gradient(95deg, ${segment.color}22 0%, rgba(17,32,54,0.9) 42%, rgba(17,28,46,0.94) 100%)`,
                       boxShadow: `inset 0 1px 0 ${segment.color}18`,
+                    }}
+                    onClick={() => {
+                      if (!categoryClickable) return
+                      setHistorySheetOpen(false)
+                      setCategorySheet({
+                        open: true,
+                        category: segment.category,
+                        label: segment.label,
+                      })
                     }}
                   >
                     <span
@@ -2279,7 +2400,7 @@ export default function CostPage({
                         value={String(Math.round(segment.amount))}
                       />
                     </div>
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -2318,7 +2439,10 @@ export default function CostPage({
               disabled={!isUnlocked}
               aria-label={isUnlocked ? 'Открыть список операций' : 'Операции недоступны'}
               className={`${SUBPAGE_CLOSE_BUTTON_CLASS} shrink-0 self-center disabled:pointer-events-none disabled:opacity-40`}
-              onClick={() => setHistorySheetOpen(true)}
+              onClick={() => {
+                setCategorySheet({ open: false, category: null, label: '' })
+                setHistorySheetOpen(true)
+              }}
             >
               <span
                 className="material-symbols-outlined leading-none text-[#4cd6fb]"
@@ -2343,6 +2467,17 @@ export default function CostPage({
         periodLabel={periodLabel}
         operations={historyOperations}
         onSelectOperation={(op) => setHistoryDetailMovementId(op.id)}
+        overlayZIndexClass="z-[120]"
+      />
+
+      <OperationsHistorySheet
+        open={categorySheet.open}
+        onClose={() => setCategorySheet({ open: false, category: null, label: '' })}
+        title={categorySheet.label || 'Категория'}
+        periodLabel={periodLabel}
+        operations={categorySheetOperations}
+        onSelectOperation={(op) => setHistoryDetailMovementId(op.id)}
+        overlayZIndexClass="z-[125]"
       />
 
       {historyMovementDetail ? (
