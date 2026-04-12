@@ -109,6 +109,13 @@ export const ACCOUNTS = [
     balanceUzs: 2100000,
     label: 'Карта жены',
     isOwn: true,
+    card: {
+      pan: '8600140098765432',
+      expires: '06/29',
+      processingSystem: 'HUMO',
+      holderName: 'MALIKA IVANOVA',
+      accentColor: '#f97316',
+    },
   },
   {
     id: 'acc_uzum_timur',
@@ -119,6 +126,13 @@ export const ACCOUNTS = [
     balanceUzs: 650000,
     label: 'Карта сына',
     isOwn: true,
+    card: {
+      pan: '8600270012349876',
+      expires: '01/30',
+      processingSystem: 'UZCARD',
+      holderName: 'TIMUR IVANOV',
+      accentColor: '#22c55e',
+    },
   },
   {
     id: 'acc_hamkor_current',
@@ -1030,9 +1044,21 @@ const WEEKLY_PURCHASE_TEMPLATES = [
 ]
 
 const MONTHLY_SALARY_UZS = 20_000_000
+const WIFE_SALARY_UZS = 8_000_000
+const SON_ALLOWANCE_UZS = 2_000_000
 const MICROLOAN_ANNUAL_RATE = 0.24
 const MAIN_SPENDING_ACCOUNT_ID = 'acc_tbc_main'
+const WIFE_SPENDING_ACCOUNT_ID = 'acc_kapital_malika'
+const SON_SPENDING_ACCOUNT_ID = 'acc_uzum_timur'
 const EXTRA_SPENDING_PRESSURE_PERIOD_MONTHS = 2
+
+const ACCOUNT_SALARY_DAY = {
+  [MAIN_SPENDING_ACCOUNT_ID]: 10,
+  [WIFE_SPENDING_ACCOUNT_ID]: 5,
+  [SON_SPENDING_ACCOUNT_ID]: 8,
+}
+
+const TRACKED_SPENDING_ACCOUNTS = [MAIN_SPENDING_ACCOUNT_ID, WIFE_SPENDING_ACCOUNT_ID, SON_SPENDING_ACCOUNT_ID]
 
 function pad2(value) {
   return String(value).padStart(2, '0')
@@ -1064,17 +1090,17 @@ function addMonths(year, month, deltaMonths) {
   }
 }
 
-/** Дата ближайшей зарплаты (10-е число 09:35) после момента займа. */
-function nextSalaryRepaymentTimestampAfter(timestamp) {
+function nextSalaryRepaymentTimestampAfter(timestamp, accountId) {
+  const salaryDay = ACCOUNT_SALARY_DAY[accountId] || 10
   const borrowedAt = new Date(timestamp)
   const year = borrowedAt.getFullYear()
   const month = borrowedAt.getMonth() + 1
-  const thisMonthSalaryTs = toTimestamp(year, month, 10, 9, 35)
+  const thisMonthSalaryTs = toTimestamp(year, month, salaryDay, 9, 35)
   if (timestamp < thisMonthSalaryTs) {
     return thisMonthSalaryTs
   }
   const next = addMonths(year, month, 1)
-  return toTimestamp(next.year, next.month, 10, 9, 35)
+  return toTimestamp(next.year, next.month, salaryDay, 9, 35)
 }
 
 function diffDaysCeil(fromTimestamp, toTimestampValue) {
@@ -1094,16 +1120,26 @@ function buildYearTransactions() {
   }
 
   const transactions = []
-  let cycleSpendableUzs = MONTHLY_SALARY_UZS
-  /** Активные микрозаймы, которые погашаются в ближайшую зарплату (10-е число). */
-  let pendingMicroloans = []
+  const cycleSpendable = {}
+  const pendingMicroloans = {
+    [MAIN_SPENDING_ACCOUNT_ID]: [],
+    [WIFE_SPENDING_ACCOUNT_ID]: [],
+    [SON_SPENDING_ACCOUNT_ID]: [],
+  }
+
+  const ACCOUNT_USER_MAP = {
+    [MAIN_SPENDING_ACCOUNT_ID]: 'user_1',
+    [WIFE_SPENDING_ACCOUNT_ID]: 'user_2',
+    [SON_SPENDING_ACCOUNT_ID]: 'user_3',
+  }
 
   const applyMicroloanFlow = (monthTransactions, monthCode) => {
     const ordered = [...monthTransactions].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
     const withMicroloans = []
 
     ordered.forEach((transaction) => {
-      if (transaction.accountId === MAIN_SPENDING_ACCOUNT_ID) {
+      const accId = transaction.accountId
+      if (TRACKED_SPENDING_ACCOUNTS.includes(accId)) {
         const amountUzs = Number(transaction.amountUzs) || 0
 
         const isMicroloanRepaymentPlaceholder =
@@ -1112,7 +1148,8 @@ function buildYearTransactions() {
           transaction.category === 'microloan' &&
           transaction.amountUzs === 0
         if (isMicroloanRepaymentPlaceholder) {
-          const dueLoans = pendingMicroloans.filter((loan) => loan.repaymentAt <= transaction.timestamp)
+          const accLoans = pendingMicroloans[accId]
+          const dueLoans = accLoans.filter((loan) => loan.repaymentAt <= transaction.timestamp)
           if (dueLoans.length > 0) {
             const totalPrincipalUzs = dueLoans.reduce((sum, loan) => sum + loan.principalUzs, 0)
             const totalInterestUzs = dueLoans.reduce((sum, loan) => {
@@ -1131,23 +1168,23 @@ function buildYearTransactions() {
               amountUzs: repaymentAmountUzs,
               description: `Погашение микрозайма ${monthCode}: тело ${Math.round(totalPrincipalUzs).toLocaleString('ru-RU')} + проценты ${Math.round(totalInterestUzs * 10) / 10} (24% годовых, ~${avgDays} дн.)`,
             })
-            cycleSpendableUzs -= repaymentAmountUzs
-            pendingMicroloans = pendingMicroloans.filter((loan) => loan.repaymentAt > transaction.timestamp)
+            cycleSpendable[accId] -= repaymentAmountUzs
+            pendingMicroloans[accId] = accLoans.filter((loan) => loan.repaymentAt > transaction.timestamp)
           }
           return
         }
 
         if (transaction.direction === 'out') {
           const outAmountUzs = Math.abs(amountUzs)
-          if (cycleSpendableUzs < outAmountUzs) {
-            const deficitUzs = outAmountUzs - cycleSpendableUzs
+          if (cycleSpendable[accId] < outAmountUzs) {
+            const deficitUzs = outAmountUzs - cycleSpendable[accId]
             const microloanAmountUzs = Math.round(deficitUzs * 10) / 10
-            const repaymentAt = nextSalaryRepaymentTimestampAfter(transaction.timestamp)
+            const repaymentAt = nextSalaryRepaymentTimestampAfter(transaction.timestamp, accId)
             withMicroloans.push({
               id: nextTxId(),
               timestamp: transaction.timestamp,
-              userId: 'user_1',
-              accountId: MAIN_SPENDING_ACCOUNT_ID,
+              userId: ACCOUNT_USER_MAP[accId],
+              accountId: accId,
               kind: 'income',
               direction: 'in',
               mcc: null,
@@ -1156,20 +1193,14 @@ function buildYearTransactions() {
               category: 'microloan',
               description: `Получение микрозайма (${monthCode}) на ${Math.round(microloanAmountUzs).toLocaleString('ru-RU')} до ${repaymentAt.slice(0, 10)}`,
             })
-            cycleSpendableUzs += microloanAmountUzs
-            pendingMicroloans.push({
+            cycleSpendable[accId] += microloanAmountUzs
+            pendingMicroloans[accId].push({
               principalUzs: microloanAmountUzs,
               borrowedAt: transaction.timestamp,
               repaymentAt,
             })
           }
-          cycleSpendableUzs -= outAmountUzs
-        } else if (transaction.direction === 'in') {
-          const inAmountUzs = Math.abs(amountUzs)
-          const isSalaryTopup =
-            transaction.kind === 'income' && String(transaction.description || '').startsWith('Зарплата ')
-          // Новый зарплатный цикл: считаем, что доступный лимит на месяц снова 20 млн (+ редкие доп. поступления в течение цикла).
-          cycleSpendableUzs = isSalaryTopup ? inAmountUzs : cycleSpendableUzs + inAmountUzs
+          cycleSpendable[accId] -= outAmountUzs
         }
       }
 
@@ -1204,23 +1235,59 @@ function buildYearTransactions() {
     const otherStreetVendorUzs = amountWithVariation(52000, monthIndex, 102, 8000)
     const otherCornerShopUzs = amountWithVariation(89000, monthIndex, 103, 15000)
     const otherUnclearMccUzs = amountWithVariation(118000, monthIndex, 104, 25000)
-    const largePlannedSpendUzs = amountWithVariation(11500000, monthIndex, 108, 9800000)
+    const wifeSalaryAmountUzs = Math.round(
+      WIFE_SALARY_UZS * (0.97 + (monthIndex % 4) * 0.015 + (month % 3) * 0.005),
+    )
+    const sonAllowanceAmountUzs = SON_ALLOWANCE_UZS
+    const wifeBudgetUzs = wifeSalaryAmountUzs + familyTransferAmountUzs
     const netflixAmountUzs = amountWithVariation(45000, monthIndex, 93, 30000)
     const aiSubAmountUzs = amountWithVariation(25000, monthIndex, 94, 15000)
 
-    transactions.push({
-      id: nextTxId(),
-      timestamp: toTimestamp(year, month, 10, 9, 35),
-      userId: 'user_1',
-      accountId: MAIN_SPENDING_ACCOUNT_ID,
-      kind: 'purchase',
-      direction: 'out',
-      mcc: null,
-      amountUzs: 0,
-      merchant: 'Microfinance 24%',
-      category: 'microloan',
-      description: `Погашение микрозайма ${monthCode}`,
-    })
+    cycleSpendable[MAIN_SPENDING_ACCOUNT_ID] = salaryAmountUzs
+    cycleSpendable[WIFE_SPENDING_ACCOUNT_ID] = wifeSalaryAmountUzs + familyTransferAmountUzs
+    cycleSpendable[SON_SPENDING_ACCOUNT_ID] = sonAllowanceAmountUzs
+
+    transactions.push(
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 5, 9, 35),
+        userId: 'user_2',
+        accountId: WIFE_SPENDING_ACCOUNT_ID,
+        kind: 'purchase',
+        direction: 'out',
+        mcc: null,
+        amountUzs: 0,
+        merchant: 'Microfinance 24%',
+        category: 'microloan',
+        description: `Погашение микрозайма ${monthCode}`,
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 8, 10, 15),
+        userId: 'user_3',
+        accountId: SON_SPENDING_ACCOUNT_ID,
+        kind: 'purchase',
+        direction: 'out',
+        mcc: null,
+        amountUzs: 0,
+        merchant: 'Microfinance 24%',
+        category: 'microloan',
+        description: `Погашение микрозайма ${monthCode}`,
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 10, 9, 35),
+        userId: 'user_1',
+        accountId: MAIN_SPENDING_ACCOUNT_ID,
+        kind: 'purchase',
+        direction: 'out',
+        mcc: null,
+        amountUzs: 0,
+        merchant: 'Microfinance 24%',
+        category: 'microloan',
+        description: `Погашение микрозайма ${monthCode}`,
+      },
+    )
 
     transactions.push(
       {
@@ -1264,7 +1331,20 @@ function buildYearTransactions() {
       },
       {
         id: nextTxId(),
-        timestamp: toTimestamp(year, month, 2, 11, 40),
+        timestamp: toTimestamp(year, month, 5, 9, 15),
+        userId: 'user_2',
+        accountId: WIFE_SPENDING_ACCOUNT_ID,
+        kind: 'income',
+        direction: 'in',
+        mcc: null,
+        amountUzs: wifeSalaryAmountUzs,
+        merchant: 'IT Solutions LLC',
+        category: 'income',
+        description: `Зарплата ${monthCode} (зарплата жены)`,
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 7, 11, 40),
         userId: 'user_1',
         accountId: 'acc_tbc_main',
         kind: 'transfer_family',
@@ -1277,7 +1357,7 @@ function buildYearTransactions() {
       },
       {
         id: nextTxId(),
-        timestamp: toTimestamp(year, month, 2, 11, 42),
+        timestamp: toTimestamp(year, month, 7, 11, 42),
         userId: 'user_2',
         accountId: 'acc_kapital_malika',
         kind: 'transfer_family',
@@ -1287,6 +1367,32 @@ function buildYearTransactions() {
         merchant: 'Андрей',
         category: 'family',
         description: 'Семейный перевод',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 8, 10, 0),
+        userId: 'user_2',
+        accountId: WIFE_SPENDING_ACCOUNT_ID,
+        kind: 'transfer_family',
+        direction: 'out',
+        mcc: null,
+        amountUzs: sonAllowanceAmountUzs,
+        merchant: 'Сын',
+        category: 'family',
+        description: 'Карманные деньги для сына',
+      },
+      {
+        id: nextTxId(),
+        timestamp: toTimestamp(year, month, 8, 10, 2),
+        userId: 'user_3',
+        accountId: SON_SPENDING_ACCOUNT_ID,
+        kind: 'income',
+        direction: 'in',
+        mcc: null,
+        amountUzs: sonAllowanceAmountUzs,
+        merchant: 'Жена',
+        category: 'income',
+        description: `Карманные деньги ${monthCode} (пополнение от родителей)`,
       },
       {
         id: nextTxId(),
@@ -1535,19 +1641,56 @@ function buildYearTransactions() {
     )
 
     if (monthIndex % EXTRA_SPENDING_PRESSURE_PERIOD_MONTHS === 0) {
-      transactions.push({
-        id: nextTxId(),
-        timestamp: toTimestamp(year, month, 23, 20, 45),
-        userId: 'user_1',
-        accountId: MAIN_SPENDING_ACCOUNT_ID,
-        kind: 'purchase',
-        direction: 'out',
-        mcc: 5311,
-        amountUzs: largePlannedSpendUzs,
-        merchant: 'Крупные семейные покупки',
-        category: resolveCategoryByMcc(5311, 'shopping'),
-        description: 'Плановые крупные расходы месяца',
-      })
+      const monthTxsSoFar = transactions.slice(monthStartIndex)
+      const calcExtraSpend = (accId, budget, deficitBase, deficitMin, seed) => {
+        const regularOut = monthTxsSoFar
+          .filter(t => t.accountId === accId && t.direction === 'out' && t.amountUzs > 0)
+          .reduce((sum, t) => sum + t.amountUzs, 0)
+        const desiredDeficit = amountWithVariation(deficitBase, monthIndex, seed, deficitMin)
+        return Math.max(100_000, Math.round(budget - regularOut + desiredDeficit))
+      }
+
+      transactions.push(
+        {
+          id: nextTxId(),
+          timestamp: toTimestamp(year, month, 23, 20, 45),
+          userId: 'user_1',
+          accountId: MAIN_SPENDING_ACCOUNT_ID,
+          kind: 'purchase',
+          direction: 'out',
+          mcc: 5311,
+          amountUzs: calcExtraSpend(MAIN_SPENDING_ACCOUNT_ID, salaryAmountUzs, 500_000, 300_000, 108),
+          merchant: 'Крупные семейные покупки',
+          category: resolveCategoryByMcc(5311, 'shopping'),
+          description: 'Плановые крупные расходы месяца',
+        },
+        {
+          id: nextTxId(),
+          timestamp: toTimestamp(year, month, 22, 14, 30),
+          userId: 'user_2',
+          accountId: WIFE_SPENDING_ACCOUNT_ID,
+          kind: 'purchase',
+          direction: 'out',
+          mcc: 5651,
+          amountUzs: calcExtraSpend(WIFE_SPENDING_ACCOUNT_ID, wifeBudgetUzs, 300_000, 150_000, 109),
+          merchant: 'Massimo Dutti',
+          category: resolveCategoryByMcc(5651, 'clothes'),
+          description: 'Крупная покупка одежды и аксессуаров',
+        },
+        {
+          id: nextTxId(),
+          timestamp: toTimestamp(year, month, 24, 16, 0),
+          userId: 'user_3',
+          accountId: SON_SPENDING_ACCOUNT_ID,
+          kind: 'purchase',
+          direction: 'out',
+          mcc: 5816,
+          amountUzs: calcExtraSpend(SON_SPENDING_ACCOUNT_ID, sonAllowanceAmountUzs, 150_000, 80_000, 110),
+          merchant: 'PlayStation Store',
+          category: resolveCategoryByMcc(5816, 'entertainment'),
+          description: 'Покупка игры и подписки',
+        },
+      )
     }
 
     const monthTransactions = transactions.splice(monthStartIndex)
