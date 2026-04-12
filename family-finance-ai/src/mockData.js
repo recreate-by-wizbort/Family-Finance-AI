@@ -1024,9 +1024,13 @@ function toTimestamp(year, month, day, hour, minute) {
   return `${year}-${pad2(month)}-${pad2(safeDay)}T${pad2(hour)}:${pad2(minute)}:00+05:00`
 }
 
+/** Заметная разница сумм между месяцами (слайды мониторинга / главная), без «одинаковых» периодов. */
 function amountWithVariation(baseAmountUzs, monthIndex, seed, minAmountUzs = 10000) {
-  const delta = ((monthIndex + 1) * 137 + seed * 83) % 90001 - 45000
-  return Math.max(minAmountUzs, baseAmountUzs + delta)
+  const phase = (monthIndex * 1.17 + seed * 0.13) % 6.283185307179586
+  const seasonal = 0.86 + Math.sin(phase) * 0.14
+  const jitter = ((monthIndex + 1) * 1847 + seed * 977 + monthIndex * seed * 41) % 120001 - 60000
+  const raw = baseAmountUzs * seasonal + jitter * 0.28
+  return Math.max(minAmountUzs, Math.round(raw))
 }
 
 function addMonths(year, month, deltaMonths) {
@@ -1155,7 +1159,9 @@ function buildYearTransactions() {
   YEAR_MONTHS.forEach(({ year, month }, monthIndex) => {
     const monthCode = `${year}-${pad2(month)}`
     const monthStartIndex = transactions.length
-    const salaryAmountUzs = MONTHLY_SALARY_UZS
+    const salaryAmountUzs = Math.round(
+      MONTHLY_SALARY_UZS * (0.965 + (monthIndex % 5) * 0.018 + (month % 3) * 0.008),
+    )
     const familyTransferAmountUzs = amountWithVariation(1450000, monthIndex, 91, 1050000)
     const depositTopupAmountUzs = amountWithVariation(820000, monthIndex, 95, 500000)
     /** Снятие со вклада всегда меньше пополнения; одна пара операций каждый месяц. */
@@ -1528,7 +1534,7 @@ function buildYearTransactions() {
   return transactions
 }
 
-function calculateMonthlyExpenseStats(transactions, yearMonth) {
+export function calculateMonthlyExpenseStats(transactions, yearMonth) {
   const byCategory = {}
   let totalExpensesUzs = 0
 
@@ -1627,6 +1633,7 @@ export const STANDALONE_CARD_MOVEMENTS = {
   ],
 }
 
+/** @deprecated Используйте calculateMonthlyExpenseStats(TRANSACTIONS, prevYearMonth) относительно даты экрана. */
 export const LAST_MONTH_STATS = calculateMonthlyExpenseStats(TRANSACTIONS, '2026-03')
 
 export const GOALS = [

@@ -1,10 +1,10 @@
 import {
   ACCOUNTS,
   CATEGORIES,
+  calculateMonthlyExpenseStats,
   FAMILY_MEMBERS,
   FILTER_PERIODS,
   GOALS,
-  LAST_MONTH_STATS,
   LINKED_EXTERNAL_CARDS,
   MCC_CATEGORY_RULES,
   NON_EXPENSE_KINDS,
@@ -31,6 +31,13 @@ function isInRange(date, fromDate, toDate) {
   }
 
   return date >= fromDate && date <= toDate
+}
+
+/** Префикс `YYYY-MM` для календарного месяца, предшествующего referenceDate. */
+function getPreviousYearMonthKey(referenceDate = new Date()) {
+  const base = toDate(referenceDate) ?? new Date()
+  const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1)
+  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`
 }
 
 function normalizeExpenseTransaction(transaction) {
@@ -175,9 +182,11 @@ export function aggregateOutflowByCategory(transactions = []) {
 export function getMonthOverMonthChange(transactions = TRANSACTIONS, referenceDate = new Date()) {
   const monthTransactions = getMonthTransactions(transactions, referenceDate)
   const thisMonth = getExpensesByCategory(monthTransactions)
-  const lastMonth = LAST_MONTH_STATS.byCategory
+  const prevMonthKey = getPreviousYearMonthKey(referenceDate)
+  const previousStats = calculateMonthlyExpenseStats(transactions, prevMonthKey)
+  const lastMonth = previousStats.byCategory
   const totalThis = getTotalExpenses(monthTransactions)
-  const totalLast = LAST_MONTH_STATS.totalExpensesUzs
+  const totalLast = previousStats.totalExpensesUzs
 
   const byCategory = {}
   const allCategories = new Set([...Object.keys(thisMonth), ...Object.keys(lastMonth)])
@@ -418,7 +427,8 @@ export function getChangeTagClass(pct) {
 export function getCategoryChartData(transactions = TRANSACTIONS, referenceDate = new Date()) {
   const monthTransactions = getMonthTransactions(transactions, referenceDate)
   const byCategory = getExpensesByCategory(monthTransactions)
-  const lastMonthByCategory = LAST_MONTH_STATS.byCategory
+  const prevMonthKey = getPreviousYearMonthKey(referenceDate)
+  const lastMonthByCategory = calculateMonthlyExpenseStats(transactions, prevMonthKey).byCategory
 
   return Object.entries(byCategory)
     .map(([category, amount]) => ({
