@@ -848,13 +848,13 @@ function saveChatState(state) {
       } : null,
       categoryEvents: state.categoryEvents,
     }
-    sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(s))
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(s))
   } catch { /* quota exceeded or other issue */ }
 }
 
 function loadChatState() {
   try {
-    const raw = sessionStorage.getItem(CHAT_STORAGE_KEY)
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY)
     if (!raw) return null
     const s = JSON.parse(raw)
     if (s.periodRange) {
@@ -1143,7 +1143,8 @@ export default function AdviceAIPage() {
       return
     }
 
-    if (!looksFinancial(q) && !askedClarification) {
+    const hasConversationContext = messages.some((m) => m.role === 'user')
+    if (!looksFinancial(q) && !askedClarification && !hasConversationContext) {
       await sleep(responseDelayMs)
       const topCats = activeTree.map((c) => c.label).join(', ')
       setMessages((prev) => [...prev, {
@@ -1161,7 +1162,9 @@ export default function AdviceAIPage() {
     await sleep(50)
 
     try {
-      const history = historyForAI.map((m) => ({ role: m.role, content: m.text }))
+      const history = messages
+        .filter((m) => m.id !== 'hello')
+        .map((m) => ({ role: m.role, content: m.text }))
       const systemPrompt = buildSystemPrompt(scope, periodLabel, USER_PROFILE.fullName || USER_PROFILE.name)
 
       const enrichedBudget = [

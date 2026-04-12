@@ -122,12 +122,15 @@ function removeFromPool(key, provider) {
   }
 }
 
+let _providerRound = 0
+
 function chooseProvider() {
   if (_workingGeminiKeys.length > 0 && _workingOpenRouterKeys.length > 0) {
     const AI_PROVIDER_RAW = (import.meta.env.VITE_AI_PROVIDER || '').toLowerCase().trim()
     if (AI_PROVIDER_RAW === 'openrouter') return 'openrouter'
     if (AI_PROVIDER_RAW === 'gemini') return 'gemini'
-    return 'gemini'
+    _providerRound++
+    return _providerRound % 2 === 0 ? 'gemini' : 'openrouter'
   }
   if (_workingGeminiKeys.length > 0) return 'gemini'
   if (_workingOpenRouterKeys.length > 0) return 'openrouter'
@@ -249,7 +252,12 @@ function openAiMessagesToGeminiPayload(openAiMessages) {
       continue
     }
     const role = m.role === 'assistant' ? 'model' : 'user'
-    contents.push({ role, parts: [{ text: String(m.content || '') }] })
+    const last = contents[contents.length - 1]
+    if (last && last.role === role) {
+      last.parts.push({ text: '\n\n' + String(m.content || '') })
+    } else {
+      contents.push({ role, parts: [{ text: String(m.content || '') }] })
+    }
   }
   const generationConfig = {
     maxOutputTokens: MAX_TOKENS_GEMINI,
@@ -444,16 +452,31 @@ async function* askOpenRouterStreamWithKey(messages, apiKey) {
 
 // ─── Pool-aware request with transparent retry ─────────────────────────────────
 
+let _geminiKeyIdx = 0
+let _openrouterKeyIdx = 0
+
+function rotatedKeys(pool, startIdx) {
+  if (pool.length === 0) return []
+  const result = []
+  for (let i = 0; i < pool.length; i++) {
+    result.push(pool[(startIdx + i) % pool.length])
+  }
+  return result
+}
+
 function buildAllCandidates() {
   const candidates = []
-  const shuffled = (arr) => [...arr].sort(() => Math.random() - 0.5)
   const preferred = chooseProvider()
-  if (preferred === 'gemini') {
-    for (const key of shuffled(_workingGeminiKeys)) candidates.push({ provider: 'gemini', key })
-    for (const key of shuffled(_workingOpenRouterKeys)) candidates.push({ provider: 'openrouter', key })
-  } else {
-    for (const key of shuffled(_workingOpenRouterKeys)) candidates.push({ provider: 'openrouter', key })
-    for (const key of shuffled(_workingGeminiKeys)) candidates.push({ provider: 'gemini', key })
+  const gemini = rotatedKeys(_workingGeminiKeys, _geminiKeyIdx).map((k) => ({ provider: 'gemini', key: k }))
+  const openrouter = rotatedKeys(_workingOpenRouterKeys, _openrouterKeyIdx).map((k) => ({ provider: 'openrouter', key: k }))
+  if (_workingGeminiKeys.length > 0) _geminiKeyIdx = (_geminiKeyIdx + 1) % _workingGeminiKeys.length
+  if (_workingOpenRouterKeys.length > 0) _openrouterKeyIdx = (_openrouterKeyIdx + 1) % _workingOpenRouterKeys.length
+  const primary = preferred === 'gemini' ? gemini : openrouter
+  const secondary = preferred === 'gemini' ? openrouter : gemini
+  const maxLen = Math.max(primary.length, secondary.length)
+  for (let i = 0; i < maxLen; i++) {
+    if (i < primary.length) candidates.push(primary[i])
+    if (i < secondary.length) candidates.push(secondary[i])
   }
   if (candidates.length === 0) {
     for (const key of ALL_GEMINI_KEYS) candidates.push({ provider: 'gemini', key })
@@ -483,11 +506,12 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
     const { provider, key } = candidates[i]
     try {
       if (provider === 'gemini') {
-        const fullText = await askGeminiGenerateContentWithKey(messages, key)
-        if (fullText) {
-          yield fullText
-          return
+        let hasTokens = false
+        for await (const token of askGeminiStreamWithKey(messages, key)) {
+          hasTokens = true
+          yield token
         }
+        if (hasTokens) return
       } else {
         let hasTokens = false
         for await (const token of askOpenRouterStreamWithKey(messages, key)) {
