@@ -3,15 +3,19 @@ const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''
 const AI_PROVIDER_RAW = (import.meta.env.VITE_AI_PROVIDER || '').toLowerCase().trim()
 
 const OPENROUTER_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free'
-const GEMINI_MODEL = 'gemini-flash-latest'
+/** Стабильный Flash; `gemini-flash-latest` иногда резолвится в превью с артефактами. Переопределение: VITE_GEMINI_MODEL */
+const GEMINI_MODEL = String(import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash').trim() || 'gemini-2.5-flash'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const GEMINI_GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent`
 
-/** Достаточно для связного ответа на русском; 600 часто обрывало фразу на середине. */
-const MAX_TOKENS = 1536
-const TEMPERATURE = 0.6
-const TOP_P = 0.9
+/** Потолок длины ответа (completion). Лаконичность задаётся системным промптом; высокий лимит уменьшает обрывы на середине фразы. */
+export const MAX_AI_OUTPUT_TOKENS = 10_000
+/** Gemini: запрашиваем тот же потолок; при ошибке лимита см. логи API. */
+const MAX_TOKENS_GEMINI = MAX_AI_OUTPUT_TOKENS
+const MAX_TOKENS_OPENROUTER = MAX_AI_OUTPUT_TOKENS
+const TEMPERATURE = 0.55
+const TOP_P = 0.92
 const REASONING_CONFIG = {
   enabled: true,
   effort: 'high',
@@ -128,7 +132,7 @@ function buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext,
       role: 'assistant',
       content: 'Понял, я изучил ваши финансовые данные и готов помочь. Задавайте вопросы.',
     },
-    ...normalizeChatHistory(chatHistory).slice(-6),
+    ...normalizeChatHistory(chatHistory).slice(-24),
     { role: 'user', content: userQuestion },
   ]
 }
@@ -150,13 +154,18 @@ function openAiMessagesToGeminiPayload(openAiMessages) {
     const role = m.role === 'assistant' ? 'model' : 'user'
     contents.push({ role, parts: [{ text: String(m.content || '') }] })
   }
+  const generationConfig = {
+    maxOutputTokens: MAX_TOKENS_GEMINI,
+    temperature: TEMPERATURE,
+    topP: TOP_P,
+  }
+  // Только 2.5+/3: иначе лишний ключ может дать 400 на старых model id
+  if (/gemini-2\.5|gemini-3/i.test(GEMINI_MODEL)) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 }
+  }
   const body = {
     contents,
-    generationConfig: {
-      maxOutputTokens: MAX_TOKENS,
-      temperature: TEMPERATURE,
-      topP: TOP_P,
-    },
+    generationConfig,
   }
   if (systemInstruction) body.systemInstruction = systemInstruction
   return body
@@ -165,7 +174,10 @@ function openAiMessagesToGeminiPayload(openAiMessages) {
 function extractGeminiText(data) {
   const parts = data?.candidates?.[0]?.content?.parts
   if (!Array.isArray(parts)) return ''
-  return parts.map((p) => p?.text || '').join('')
+  return parts
+    .filter((p) => p && p.thought !== true)
+    .map((p) => p?.text || '')
+    .join('')
 }
 
 async function askGeminiGenerateContent(messages) {
@@ -227,13 +239,21 @@ export async function* askGeminiStream(messages) {
         const json = JSON.parse(payload)
         if (json?.error) throw new Error(json.error?.message || 'Ошибка стрима Gemini')
         const full = extractGeminiText(json)
-        if (full && full.length > lastFull.length) {
+        if (!full) continue
+        // Только монотонное наращивание префикса — иначе slice() даёт «слипшийся» мусор при рассинхроне чанков
+        if (lastFull && full.startsWith(lastFull)) {
           const delta = full.slice(lastFull.length)
           lastFull = full
           if (delta) {
             yielded += delta.length
             yield delta
           }
+        } else if (lastFull && lastFull.startsWith(full)) {
+          continue
+        } else if (full) {
+          lastFull = full
+          yielded += full.length
+          yield full
         }
       } catch (err) {
         if (err instanceof SyntaxError) continue
@@ -261,9 +281,9 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
   const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
 
   if (getActiveAiProvider() === 'gemini') {
-    for await (const chunk of askGeminiStream(messages)) {
-      yield chunk
-    }
+    // Один цельный ответ без SSE — меньше артефактов склейки, чем у streamGenerateContent + дельт
+    const fullText = await askGeminiGenerateContent(messages)
+    if (fullText) yield fullText
     return
   }
 
@@ -273,7 +293,7 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
       messages,
-      max_tokens: MAX_TOKENS,
+      max_tokens: MAX_TOKENS_OPENROUTER,
       temperature: TEMPERATURE,
       top_p: TOP_P,
       reasoning: REASONING_CONFIG,
@@ -348,7 +368,7 @@ export async function askAISimple(systemPrompt, userQuestion, budgetContext, yea
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
       messages,
-      max_tokens: MAX_TOKENS,
+      max_tokens: MAX_TOKENS_OPENROUTER,
       temperature: TEMPERATURE,
       top_p: TOP_P,
       reasoning: REASONING_CONFIG,

@@ -195,7 +195,7 @@ export default function MicroloanReceiveSheet({
             />
           </div>
 
-          <div className="shrink-0 space-y-4 border-t border-[#1c2a41] bg-[#071021] px-5 py-4 pb-[max(1rem,calc(0.75rem+env(safe-area-inset-bottom,0px)))] sm:pb-6">
+          <div className="shrink-0 border-t border-[#1c2a41] bg-[#071021] px-5 py-4 pb-[max(1rem,calc(0.75rem+env(safe-area-inset-bottom,0px)))] sm:pb-6">
             {recreateBankProducts.length > 0 ? (
               <CardSourceSelect
                 cards={recreateBankProducts}
@@ -214,13 +214,13 @@ export default function MicroloanReceiveSheet({
             )}
 
             {error ? (
-              <p className="text-sm leading-snug text-[#ffb4ab]">{error}</p>
+              <p className="mt-4 text-sm leading-snug text-[#ffb4ab]">{error}</p>
             ) : null}
 
             <button
               type="submit"
               disabled={recreateUzsTargets.length === 0}
-              className="w-full rounded-2xl bg-[#4cd6fb] py-3.5 text-sm font-bold leading-snug text-[#041329] transition-opacity hover:opacity-90 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-40"
+              className="mt-8 w-full rounded-2xl bg-[#4cd6fb] py-3.5 text-sm font-bold leading-snug text-[#041329] transition-opacity hover:opacity-90 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-40"
             >
               Зачислить на карту
             </button>
