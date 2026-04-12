@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
 import AddLinkedCardModal from '../components/AddLinkedCardModal'
@@ -15,6 +15,7 @@ import ComingSoonSheet from '../components/ComingSoonSheet'
 import CurrencyRatesSheet from '../components/CurrencyRatesSheet'
 import PromotionsSheet from '../components/PromotionsSheet'
 import OfferDetailSheet from '../components/OfferDetailSheet'
+import MicroloanReceiveSheet from '../components/MicroloanReceiveSheet'
 import CardTopUpSheet from '../components/CardTopUpSheet'
 import AccountWithdrawSheet from '../components/AccountWithdrawSheet'
 import CardTransferSheet from '../components/CardTransferSheet'
@@ -77,6 +78,7 @@ function depositCountRu(n) {
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const isUnlocked = isSessionUnlocked()
   const rates = useExchangeRates()
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -107,6 +109,8 @@ export default function HomePage() {
   const [openAccountOpen, setOpenAccountOpen] = useState(false)
   const [accountsOverviewOpen, setAccountsOverviewOpen] = useState(false)
   const [selectedAccount, setSelectedAccount] = useState(null)
+  const [microloanReceiveOpen, setMicroloanReceiveOpen] = useState(false)
+  const [specialOffersFocusId, setSpecialOffersFocusId] = useState(null)
   const offersTouchRef = useRef({ startX: 0, startY: 0 })
   const offersTimerRef = useRef(null)
 
@@ -127,6 +131,24 @@ export default function HomePage() {
       q ? `${window.location.pathname}?${q}` : window.location.pathname,
     )
   }, [])
+
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search)
+    const action = sp.get('open')
+    if (!action) return
+    if (action === 'deposit') setOpenDepositOpen(true)
+    else if (action === 'promotions') setPromotionsOpen(true)
+    else if (action === 'offers') {
+      setSpecialOffersAllOpen(true)
+      const oid = sp.get('offer')
+      if (oid) setSpecialOffersFocusId(oid)
+    } else if (action === 'deposits') setDepositsOverviewOpen(true)
+    else if (action === 'accounts') setAccountsOverviewOpen(true)
+    sp.delete('open')
+    sp.delete('offer')
+    const q = sp.toString()
+    window.history.replaceState({}, '', q ? `${window.location.pathname}?${q}` : window.location.pathname)
+  }, [location.search])
 
   useEffect(() => {
     saveCardBalanceDeltas(cardBalanceDeltas)
@@ -283,6 +305,36 @@ export default function HomePage() {
       [cardId]: (prev[cardId] ?? 0) + deltaInCardCurrency,
     }))
   }, [])
+
+  const openMicroloanReceive = useCallback(() => {
+    setMicroloanReceiveOpen(true)
+  }, [])
+
+  const handleMicroloanCredited = useCallback(
+    (card, amountUzs) => {
+      const isUserUzsAccount = String(card.id).startsWith('uacc_') && !card.foreignCurrency
+      if (isUserUzsAccount) {
+        setUserAccounts((prev) => {
+          const next = prev.map((a) =>
+            a.id === card.id ? topUpAccount(a, amountUzs, 'microloan') : a,
+          )
+          saveUserAccounts(next)
+          return next
+        })
+      } else {
+        applyCardDelta(card.id, amountUzs)
+      }
+      const mov = buildDepositInMovement(
+        card,
+        amountUzs,
+        'Зачисление микрозайма (24% годовых)',
+        'Микрозайм 24%',
+      )
+      setLinkedMovementsByCardId((prev) => appendDepositCardMovement(prev, card.id, mov))
+      setMicroloanReceiveOpen(false)
+    },
+    [applyCardDelta],
+  )
 
   const handleDepositCreated = useCallback(
     (deposit, card, amountInCardCurrency) => {
@@ -761,7 +813,7 @@ export default function HomePage() {
                   Баланс карт
                 </p>
                 <h2 className="text-4xl font-extrabold tracking-tight text-[#003642] md:text-5xl">
-                  <UzsAmount as="span" value={balanceValue} />
+                  <UzsAmount as="span" currencyClassName="!text-inherit" value={balanceValue} />
                 </h2>
               </div>
               <div className="mt-8 flex items-center justify-between">
@@ -883,73 +935,71 @@ export default function HomePage() {
 
         <div className="mb-10 grid grid-cols-2 gap-3 md:grid-cols-4">
           <button
-            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
+            className="relative rounded-2xl bg-[#112036] px-4 py-3 pr-12 text-left transition-colors hover:bg-[#1c2a41]"
             onClick={handleOpenDepositsEntry}
             type="button"
           >
-            <div className="flex flex-col gap-2">
-              <span className="material-symbols-outlined text-2xl text-[#4cd6fb]">savings</span>
-              <div>
-                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">
-                  {deposits.length === 0 ? 'Открыть вклад' : 'Вклады'}
-                </h3>
-                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">
-                  {deposits.length === 0 ? 'До 20% годовых' : depositCountRu(deposits.length)}
-                </p>
-              </div>
+            <span className="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-2xl leading-none text-[#4cd6fb]">
+              savings
+            </span>
+            <div>
+              <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">
+                {deposits.length === 0 ? 'Открыть вклад' : 'Вклады'}
+              </h3>
+              <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">
+                {deposits.length === 0 ? 'До 20% годовых' : depositCountRu(deposits.length)}
+              </p>
             </div>
           </button>
 
           <button
-            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
+            className="relative rounded-2xl bg-[#112036] px-4 py-3 pr-12 text-left transition-colors hover:bg-[#1c2a41]"
             onClick={() => setPromotionsOpen(true)}
             type="button"
           >
-            <div className="flex flex-col gap-2">
-              <span className="material-symbols-outlined text-2xl text-[#58d6f1]">campaign</span>
-              <div>
-                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Акции</h3>
-                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Кэшбэк до 30%</p>
-              </div>
+            <span className="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-2xl leading-none text-[#58d6f1]">
+              campaign
+            </span>
+            <div>
+              <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Акции</h3>
+              <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Кэшбэк до 30%</p>
             </div>
           </button>
 
           <button
-            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
+            className="relative rounded-2xl bg-[#112036] px-4 py-3 pr-12 text-left transition-colors hover:bg-[#1c2a41]"
             onClick={() => openComingSoon('Страхование')}
             type="button"
           >
-            <div className="flex flex-col gap-2">
-              <span className="material-symbols-outlined text-2xl text-[#4cd6fb]">
-                health_and_safety
-              </span>
-              <div>
-                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Страхование</h3>
-                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Защита активов</p>
-              </div>
+            <span className="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-2xl leading-none text-[#4cd6fb]">
+              health_and_safety
+            </span>
+            <div>
+              <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Страхование</h3>
+              <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Защита активов</p>
             </div>
           </button>
 
           <button
-            className="rounded-2xl bg-[#112036] px-4 py-3 text-left transition-colors hover:bg-[#1c2a41]"
-            onClick={() => setSpecialOffersAllOpen(true)}
+            className="relative rounded-2xl bg-[#112036] px-4 py-3 pr-12 text-left transition-colors hover:bg-[#1c2a41]"
+            onClick={() => navigate('/advise-ai', { state: { from: '/home', unlocked: true } })}
             type="button"
           >
-            <div className="flex flex-col gap-2">
-              <span className="material-symbols-outlined text-2xl text-[#58d6f1]">local_offer</span>
-              <div>
-                <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">Предложения</h3>
-                <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Для вас</p>
-              </div>
+            <span className="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-2xl leading-none text-[#58d6f1]">
+              smart_toy
+            </span>
+            <div>
+              <h3 className="text-sm font-bold leading-tight text-[#d6e3ff]">AI ассистент</h3>
+              <p className="mt-0.5 text-[11px] leading-snug text-[#bcc9ce]">Советы и анализ</p>
             </div>
           </button>
         </div>
 
-        <section className="mb-10 overflow-hidden">
-          <div className="mb-4 flex items-center justify-between">
+        <section className="mb-10">
+          <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-[#d6e3ff]">Специальные предложения</h2>
             <button
-              className="text-sm font-medium text-[#4cd6fb]"
+              className="shrink-0 rounded-full border border-[#4cd6fb]/55 bg-[#112036]/80 px-3.5 py-1.5 text-sm font-semibold text-[#4cd6fb] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors hover:border-[#58d6f1] hover:bg-[#1c2a41] hover:text-[#58d6f1] active:scale-[0.98]"
               onClick={() => setSpecialOffersAllOpen(true)}
               type="button"
             >
@@ -958,33 +1008,41 @@ export default function HomePage() {
           </div>
 
           <div
-            className="relative overflow-hidden rounded-3xl"
+            className="relative w-full overflow-hidden rounded-3xl"
             onTouchStart={handleOffersTouchStart}
             onTouchEnd={handleOffersTouchEnd}
           >
             <div
-              className="flex transition-transform duration-500 ease-out"
-              style={{ transform: `translateX(-${specialOfferIndex * 100}%)` }}
+              className="flex transition-transform duration-500 ease-out will-change-transform"
+              style={{
+                width: `${SPECIAL_OFFERS.length * 100}%`,
+                transform: `translateX(-${(100 / SPECIAL_OFFERS.length) * specialOfferIndex}%)`,
+              }}
             >
               {SPECIAL_OFFERS.map((o) => (
                 <button
                   key={o.id}
                   type="button"
                   onClick={() => setSelectedOffer(o)}
-                  className="relative flex h-40 min-w-full shrink-0 flex-col justify-end overflow-hidden bg-[#0d1c32] p-6 text-left"
+                  style={{ width: `${100 / SPECIAL_OFFERS.length}%` }}
+                  className="relative box-border flex h-40 shrink-0 flex-col justify-end bg-[#0d1c32] p-6 text-left"
                 >
-                  <img
-                    className={`absolute inset-0 h-full w-full object-cover opacity-40 ${o.coverImageClass ?? ''}`}
-                    alt={o.imageAlt}
-                    src={o.image}
-                  />
-                  <div className="relative z-10">
+                  <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                    <img
+                      className={`h-full w-full object-cover opacity-40 ${o.coverImageClass ?? ''}`}
+                      alt={o.imageAlt}
+                      src={o.image}
+                    />
+                  </div>
+                  <div className="relative z-10 min-w-0">
                     <span
-                      className={`mb-2 inline-block rounded-full border px-2 py-1 text-[10px] font-bold ${o.tagClass}`}
+                      className={`mb-2 inline-block max-w-full rounded-full border px-2.5 py-1 text-[10px] font-bold leading-tight shadow-sm ${o.tagClass}`}
                     >
                       {o.tag}
                     </span>
-                    <h4 className="text-lg font-bold leading-tight text-[#d6e3ff]">{o.title}</h4>
+                    <h4 className="line-clamp-2 text-base font-bold leading-snug text-[#d6e3ff] sm:text-lg">
+                      {o.title}
+                    </h4>
                   </div>
                 </button>
               ))}
@@ -1022,7 +1080,7 @@ export default function HomePage() {
               </div>
               <div className="text-right">
                 <p className="font-bold text-[#ffb4ab]">
-                  <UzsAmount as="span" value={spendingValue} />
+                  <UzsAmount as="span" currencyClassName="!text-inherit" value={spendingValue} />
                 </p>
                 <p className="text-[10px] uppercase tracking-wider text-[#bcc9ce]">на 12% больше</p>
               </div>
@@ -1093,7 +1151,12 @@ export default function HomePage() {
       <SpecialOffersAllSheet
         isOpen={specialOffersAllOpen}
         offers={SPECIAL_OFFERS}
-        onClose={() => setSpecialOffersAllOpen(false)}
+        initialOfferId={specialOffersFocusId}
+        onClose={() => {
+          setSpecialOffersAllOpen(false)
+          setSpecialOffersFocusId(null)
+        }}
+        onMicroloanReceive={openMicroloanReceive}
       />
 
       <OpenDepositModal
@@ -1144,6 +1207,14 @@ export default function HomePage() {
       <OfferDetailSheet
         offer={selectedOffer}
         onClose={() => setSelectedOffer(null)}
+        onMicroloanReceive={openMicroloanReceive}
+      />
+
+      <MicroloanReceiveSheet
+        isOpen={microloanReceiveOpen}
+        onClose={() => setMicroloanReceiveOpen(false)}
+        allUserCards={allUserCards}
+        onCredited={handleMicroloanCredited}
       />
 
       <OpenAccountModal

@@ -13,7 +13,23 @@ const P = {
   airplane: '/promo/airplane.jpg',
 }
 
+/** ID оффера микрозайма для диплинков из чата/пушей (см. /home?open=offers&offer=…) */
+export const MICROLOAN_SPECIAL_OFFER_ID = 'microloan-fixed-24'
+
 export const SPECIAL_OFFERS = [
+  {
+    id: 'microloan-fixed-24',
+    offerKind: 'microloan',
+    tag: 'МИКРОЗАЙМ',
+    tagClass: 'border-[#fb7185]/35 bg-[#fb7185]/15 text-[#fda4af]',
+    title: 'Микрозайм: фиксированные 24% годовых',
+    description:
+      'Оформите микрозайм в сумах: фиксированная ставка 24% годовых на весь срок, без скрытых комиссий за оформление в демо-сценарии. Зачисление — только на ваши карты и счета Bank of Recreate в UZS; выбор из списка в приложении. Сумма от 100 000 до 100 000 000 UZS.',
+    image: P.piggy,
+    imageAlt: 'накопления и займ',
+    coverImageClass: 'opacity-50',
+    detailHeroClass: 'h-[13rem] sm:h-52',
+  },
   {
     id: 'vip-platinum',
     tag: 'VIP ПАКЕТ',

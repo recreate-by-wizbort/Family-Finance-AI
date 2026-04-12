@@ -10,6 +10,7 @@ const NON_INCOME_KINDS_SET = new Set([
   'transfer_internal', 'transfer_family', 'deposit_topup',
   'goal_topup', 'transfer_p2p', 'transfer_external_card',
 ])
+import { MICROLOAN_SPECIAL_OFFER_ID } from '../data/specialOffers'
 import { matchFAQ, detectSpecialInput, CLARIFICATION_MSG, TOO_SHORT_MSG, buildSystemPrompt } from '../mockDataAI'
 import { generateDynamicResponse, USER_PROFILE } from '../analysisEngine'
 import { isSessionUnlocked } from '../utils/sessionLock'
@@ -81,14 +82,19 @@ function formatPeriodLabel(type, range) {
 
 function parseMessageActions(text) {
   const actions = []
+  const navActions = []
   const cleanText = text
+    .replace(/\[НАВИГАЦИЯ:\s*([^|]+)\|\s*([^\]]+)\]/gi, (_, label, path) => {
+      navActions.push({ label: label.trim(), path: path.trim() })
+      return ''
+    })
     .replace(/\[КНОПКА:\s*([^\]]+)\]/gi, (_, label) => {
       actions.push(label.trim())
       return ''
     })
     .replace(/\n{3,}/g, '\n\n')
     .trim()
-  return { cleanText, actions: actions.filter(isMeaningfulActionLabel) }
+  return { cleanText, actions: actions.filter(isMeaningfulActionLabel), navActions }
 }
 
 const NON_ACTIONABLE_PATTERNS = [
@@ -131,7 +137,13 @@ function sanitizeAssistantResponse(rawText) {
   if (thoughtCount >= 2 || (thoughtCount >= 1 && lines.length > 6)) {
     const quoted = text.match(/["«]([\s\S]{15,}?)["»]/)
     if (quoted?.[1]?.trim()) {
-      text = quoted[1].trim()
+      const inner = quoted[1].trim()
+      // Не подменять весь ответ короткой «цитатой» из черновика модели — это давало обрыв на середине фразы.
+      if (inner.length >= text.length * 0.42) text = inner
+      else {
+        const clean = lines.filter((l) => !thinkingRu.test(l) && !thinkingEn.test(l))
+        text = clean.join('\n').trim()
+      }
     } else {
       const clean = lines.filter((l) => !thinkingRu.test(l) && !thinkingEn.test(l))
       text = clean.join('\n').trim()
@@ -148,16 +160,24 @@ const FINANCE_KEYWORDS = [
   'вклад','кредит','займ','долг','баланс','счёт','счет','карт','перевод','платёж','платеж',
   'цел','машин','отпуск','подушк','жильё','жилье','квартир',
   'категор','подпис','коммунал','транспорт','такси','кафе','ресторан','магазин','маркетплейс',
-  'покуп','продукт','еда','одежд','здоров','развлеч','образован',
-  'прогноз','оптимиз','анализ','сравн','период','месяц','недел','год',
-  'сколько','хватит','почему выросл','куда уходят','где сэконом','как накоп','как быстрее',
+  'покуп','продукт','еда','одежд','здоровь','медицин','аптек','развлеч','образован',
+  'прогноз','оптимиз','анализ','сравнить','сравнение','период','этом месяце','прошлом месяце','за месяц','в месяц','месячн','за недел','на недел','недельн',
+  'за год','на год','в этом году','прошлый год','следующий год','годовой','годовая','годовые','год к году',
+  'хватит','почему выросл','куда уходят','где сэконом','как накоп','как быстрее',
   'семь','ребён','ребенок','жена','муж','сын','дочь',
   'процент','кэшбэк','инвест','сбереж','резерв',
   'млн','тыс','сум','uzs',
+  'сколько тра','сколько плат','сколько остал','сколько могу','сколько у меня','сколько дох','сколько расх',
+  'сколько стоит подписк','сколько на каф','сколько накоп','сколько кред','сколько долг',
 ]
 
 function looksFinancial(input) {
-  const n = input.toLowerCase().replace(/ё/g, 'е')
+  const n = input.toLowerCase().replace(/ё/g, 'е').replace(/сегодня/g, ' ')
+  // Школьная арифметика / «сколько километров» — не финансы
+  if (/(умножить|разделить на|плюс \d|корень из|уравнен|пятнадцать умножить|километр(ов)? до|метров до|градусов)/i.test(n)
+    && !/(сум|руб|тенге|бюджет|трат|накоп|вклад|карт|зарплат|кредит|ипотек|млн|тыс)/i.test(n)) {
+    return false
+  }
   return FINANCE_KEYWORDS.some((kw) => n.includes(kw))
 }
 
@@ -277,6 +297,82 @@ function periodToMonthlyAmount(amount, periodType) {
   if (periodType === 'week') return amount * 4.33
   if (periodType === 'year') return amount / 12
   return amount
+}
+
+/** Аннуитетный платёж в месяц (демо-оценка для подсказки в чате). */
+function monthlyAnnuityPayment(principalUzs, annualRate, months) {
+  const p = Number(principalUzs)
+  const n = Math.max(1, Math.min(120, Math.round(months)))
+  if (!Number.isFinite(p) || p <= 0) return 0
+  const r = annualRate / 12
+  if (r <= 0) return p / n
+  const pow = (1 + r) ** n
+  return (p * r * pow) / (pow - 1)
+}
+
+function userMentionsCashShortage(q) {
+  const n = String(q || '').toLowerCase().replace(/ё/g, 'е')
+  return /(не\s*хватат|не\s*хвата|нехвата|нет\s+денег|мало\s+денег|закончились\s+ден|денег\s*до\s*конца|до\s+конца\s+месяц|конец\s+месяц|не\s+тяну|не\s+успеваю|осталось\s+мало|в\s+минусе|не\s+хватит|не\s+хватило|просела\s+касса)/i.test(n)
+}
+
+/**
+ * Если по данным периода правда тесно — добавляем оффер микрозайма и сценарий погашения.
+ * @returns {string} пусто, если условия не выполнены
+ */
+function buildCashCrunchMicroloanAppendix(range, scope, periodType) {
+  const uid = scope === 'family' ? null : USER_PROFILE.userId
+  const filtered = TRANSACTIONS.filter((tx) => {
+    const t = new Date(tx.timestamp).getTime()
+    if (t < range.start.getTime() || t > range.end.getTime()) return false
+    if (uid && tx.userId !== uid) return false
+    return true
+  })
+  const income = filtered.filter(isRealIncome).reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+  const expenses = filtered.filter(isRealExpense).reduce((s, t) => s + Number(t.amountUzs || 0), 0)
+  const balanceTotal = ACCOUNTS
+    .filter((a) => !uid || a.userId === uid)
+    .reduce((s, a) => s + Number(a.balanceUzs || 0), 0)
+
+  const monthlyExp = periodToMonthlyAmount(expenses, periodType)
+  const monthlyInc = periodToMonthlyAmount(income, periodType)
+  const surplus = monthlyInc - monthlyExp
+  const periodGap = Math.max(0, expenses - income)
+
+  const tightData =
+    periodGap > 0
+    || surplus <= Math.max(0, monthlyExp) * 0.03
+    || (monthlyExp > 0 && balanceTotal < monthlyExp * 0.45)
+
+  if (!tightData) return ''
+
+  const rawPrincipal = periodGap > 0 ? periodGap : Math.min(monthlyExp * 0.35, Math.max(500_000, monthlyInc * 0.22))
+  const principalRounded = Math.min(50_000_000, Math.max(100_000, Math.ceil(rawPrincipal / 50_000) * 50_000))
+
+  const annualRate = 0.24
+  const termMonths = 6
+  const pay = monthlyAnnuityPayment(principalRounded, annualRate, termMonths)
+  const totalRepay = Math.round(pay * termMonths)
+  const approxInterest = Math.max(0, totalRepay - principalRounded)
+
+  let comfortLine = ''
+  if (surplus > pay * 1.12) {
+    comfortLine = `По средним за выбранный период (в пересчёте на месяц): доход ~${formatMoney(Math.round(monthlyInc))} сум, расходы ~${formatMoney(Math.round(monthlyExp))} сум, свободный остаток ~${formatMoney(Math.round(surplus))} сум. Платёж ~${formatMoney(Math.round(pay))} сум укладывается в этот остаток — при стабильных поступлениях закрыть за ${termMonths} мес. выглядит спокойным сценарием.`
+  } else if (surplus > 0) {
+    comfortLine = `Свободный остаток ~${formatMoney(Math.round(surplus))} сум/мес. близок к платежу ~${formatMoney(Math.round(pay))} сум/мес.: заложите дату платежа сразу после зарплаты и удержите 10–15% с «гибких» категорий (кафе, маркетплейсы) — по вашим данным это самый быстрый рычаг.`
+  } else {
+    comfortLine = `По окну периода расходы выше дохода — платёж ~${formatMoney(Math.round(pay))} сум/мес. лучше считать обязательной статьёй и параллельно уменьшать необязательные траты, иначе нагрузка будет нарастать.`
+  }
+
+  return [
+    'Если сейчас действительно тесно с ликвидностью, в приложении есть демо-оффер микрозайма (ставка и условия — в карточке).',
+    '',
+    'Как может выглядеть погашение (оценка, аннуитет, 6 мес., 24% годовых, без учёта комиссий банка):',
+    `• Пример суммы «закрыть дыру»: ${formatMoney(principalRounded)} сум`,
+    `• Платёж ~${formatMoney(Math.round(pay))} сум/мес., всего к выплате ~${formatMoney(totalRepay)} сум (проценты порядка ${formatMoney(approxInterest)} сум).`,
+    `• ${comfortLine}`,
+    '',
+    `[НАВИГАЦИЯ: Открыть микрозайм в спецпредложениях | /home?open=offers&offer=${MICROLOAN_SPECIAL_OFFER_ID}]`,
+  ].join('\n')
 }
 
 function buildCarPlanText({ range, currentScope, periodType, messages }) {
@@ -690,9 +786,43 @@ const CATEGORY_TREE = {
 // ─── Session persistence ───────────────────────────────────────────────────────
 
 const SESSION_KEY = 'advice_ai_greeted'
+const CHAT_STORAGE_KEY = 'advice_ai_chat_state'
 let _sessionGreeted = false
 
 const HELLO_TEXT = `Здравствуйте, ${USER_PROFILE.name}! Я ваш персональный финансовый помощник от RECREATE BY WIZBORT. Выберите тему ниже или задайте свободный вопрос.`
+
+function saveChatState(state) {
+  try {
+    const s = {
+      messages: state.messages,
+      scope: state.scope,
+      periodType: state.periodType,
+      periodStep: state.periodStep,
+      periodLabel: state.periodLabel,
+      periodRange: state.periodRange ? {
+        start: state.periodRange.start.toISOString(),
+        end: state.periodRange.end.toISOString(),
+      } : null,
+      categoryEvents: state.categoryEvents,
+    }
+    sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(s))
+  } catch { /* quota exceeded or other issue */ }
+}
+
+function loadChatState() {
+  try {
+    const raw = sessionStorage.getItem(CHAT_STORAGE_KEY)
+    if (!raw) return null
+    const s = JSON.parse(raw)
+    if (s.periodRange) {
+      s.periodRange = {
+        start: new Date(s.periodRange.start),
+        end: new Date(s.periodRange.end),
+      }
+    }
+    return s
+  } catch { return null }
+}
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
@@ -702,12 +832,15 @@ export default function AdviceAIPage() {
   const navigate = useNavigate()
   const chatEndRef = useRef(null)
 
+  // Restore saved session
+  const savedState = useRef(loadChatState())
+
   // Scope & period
-  const [scope, setScope] = useState('personal')
-  const [periodType, setPeriodType] = useState(null)
-  const [periodStep, setPeriodStep] = useState('select_type')
-  const [periodRange, setPeriodRange] = useState(null)
-  const [periodLabel, setPeriodLabel] = useState('')
+  const [scope, setScope] = useState(savedState.current?.scope || 'personal')
+  const [periodType, setPeriodType] = useState(savedState.current?.periodType || null)
+  const [periodStep, setPeriodStep] = useState(savedState.current?.periodStep || 'select_type')
+  const [periodRange, setPeriodRange] = useState(savedState.current?.periodRange || null)
+  const [periodLabel, setPeriodLabel] = useState(savedState.current?.periodLabel || '')
   const [customWeekMonth, setCustomWeekMonth] = useState(null)
   const [customWeekStart, setCustomWeekStart] = useState('')
   const [customWeekEnd, setCustomWeekEnd] = useState('')
@@ -720,13 +853,19 @@ export default function AdviceAIPage() {
   // Chat
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState(savedState.current?.messages || [])
   const [categoryPath, setCategoryPath] = useState([])
-  const [categoryEvents, setCategoryEvents] = useState([])
+  const [categoryEvents, setCategoryEvents] = useState(savedState.current?.categoryEvents || [])
   const [askedClarification, setAskedClarification] = useState(false)
 
+  // Persist chat state across navigation
+  useEffect(() => {
+    saveChatState({ messages, scope, periodType, periodStep, periodLabel, periodRange, categoryEvents })
+  }, [messages, scope, periodType, periodStep, periodLabel, periodRange, categoryEvents])
+
   // Typing animation
-  const alreadyGreeted = _sessionGreeted || sessionStorage.getItem(SESSION_KEY) === '1'
+  const hasRestoredMessages = (savedState.current?.messages?.length || 0) > 0
+  const alreadyGreeted = _sessionGreeted || sessionStorage.getItem(SESSION_KEY) === '1' || hasRestoredMessages
   const [typingDone, setTypingDone] = useState(alreadyGreeted)
   const [needsTyping] = useState(!alreadyGreeted)
 
@@ -754,7 +893,16 @@ export default function AdviceAIPage() {
   }, [openWeekCalendar])
 
   const returnToMonitoring = () => {
-    if (location.state?.from === '/monitoring' && window.history.length > 1) {
+    const from = location.state?.from
+    if (from === '/home') {
+      if (window.history.length > 1) {
+        navigate(-1)
+        return
+      }
+      navigate('/home', { state: { unlocked: true } })
+      return
+    }
+    if (from === '/monitoring' && window.history.length > 1) {
       navigate(-1)
       return
     }
@@ -929,14 +1077,24 @@ export default function AdviceAIPage() {
       return
     }
 
-    if (!isActionTrigger) {
-      const faqMatch = matchFAQ(q)
-      if (faqMatch) {
+    const investAdviseClick = /^посоветовать\.?$/i.test(q.trim())
+    if (investAdviseClick && periodRange) {
+      const adviceText = generateDynamicResponse('inv_advise', periodRange, scope)
+      if (adviceText) {
         await sleep(responseDelayMs)
-        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: faqMatch.r }])
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: adviceText }])
         setAskedClarification(false)
         return
       }
+    }
+
+    // Кнопки [КНОПКА: …] тоже обрабатываем через FAQ/скрипты — без вызова AI (ключ не нужен).
+    const faqMatch = matchFAQ(q)
+    if (faqMatch) {
+      await sleep(responseDelayMs)
+      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: faqMatch.r }])
+      setAskedClarification(false)
+      return
     }
 
     if (!looksFinancial(q) && !askedClarification) {
@@ -945,7 +1103,7 @@ export default function AdviceAIPage() {
       setMessages((prev) => [...prev, {
         id: `a-${Date.now()}`,
         role: 'assistant',
-        text: `Не уверен, что понял ваш вопрос. Возможно, вы имели в виду что-то из этих тем?\n\n${topCats}\n\nВыберите категорию ниже или задайте вопрос ещё раз — и я передам его AI-помощнику.`,
+        text: `Не уверен, что понял ваш вопрос. Я отвечаю на финансовые темы по приложению и вашим данным.\n\nВыберите тему из списка ниже или переформулируйте вопрос (например: «сколько трачу на кафе?», «как накопить на цель?»).`,
       }])
       setAskedClarification(true)
       return
@@ -972,10 +1130,19 @@ export default function AdviceAIPage() {
       }
       const safeFinal = sanitizeAssistantResponse(streamed)
 
+      const crunchAppendix =
+        periodRange && userMentionsCashShortage(q)
+          ? buildCashCrunchMicroloanAppendix(periodRange, scope, periodType)
+          : ''
+      const merged =
+        crunchAppendix && !safeFinal.includes(MICROLOAN_SPECIAL_OFFER_ID)
+          ? `${safeFinal}\n\n${crunchAppendix}`
+          : safeFinal
+
       if (!safeFinal || safeFinal.trim() === q.trim()) {
         setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: 'Этот вопрос выходит за рамки моей специализации. Я — финансовый помощник и могу помочь с анализом расходов, доходов, целей и прогнозов. Попробуйте спросить что-то связанное с вашими финансами.' }])
       } else {
-        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: safeFinal }])
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: merged }])
       }
     } catch (err) {
       setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: `Ошибка: ${err?.message || 'попробуйте позже'}` }])
@@ -1175,7 +1342,7 @@ export default function AdviceAIPage() {
                   </div>
                 ) : null}
                 {(() => {
-                  const { cleanText, actions } = msg.role === 'assistant' ? parseMessageActions(msg.text || '') : { cleanText: msg.text, actions: [] }
+                  const { cleanText, actions, navActions } = msg.role === 'assistant' ? parseMessageActions(msg.text || '') : { cleanText: msg.text, actions: [], navActions: [] }
                   return (
                 <div className={`max-w-[min(100%,44rem)] whitespace-pre-line rounded-3xl p-4 leading-relaxed ${
                   msg.role === 'assistant'
@@ -1187,7 +1354,7 @@ export default function AdviceAIPage() {
                   ) : (
                     cleanText || ''
                   )}
-                  {msg.role === 'assistant' && actions.length > 0 && !msg.typing ? (
+                  {msg.role === 'assistant' && (actions.length > 0 || navActions.length > 0) && !msg.typing ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {actions.map((label) => (
                         <button
@@ -1198,6 +1365,17 @@ export default function AdviceAIPage() {
                           className="rounded-full border border-[#4cd6fb]/45 bg-[#112036] px-3 py-1.5 text-xs font-semibold text-[#58d6f1] transition hover:border-[#4cd6fb] hover:bg-[#1b2a42] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {label}
+                        </button>
+                      ))}
+                      {navActions.map((nav) => (
+                        <button
+                          key={`${msg.id}-nav-${nav.path}`}
+                          type="button"
+                          onClick={() => navigate(nav.path)}
+                          className="flex items-center gap-1.5 rounded-full border border-[#00b4d8]/60 bg-gradient-to-r from-[#0d2a40] to-[#112036] px-3 py-1.5 text-xs font-semibold text-[#4cd6fb] transition hover:border-[#4cd6fb] hover:brightness-110"
+                        >
+                          <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                          {nav.label}
                         </button>
                       ))}
                     </div>

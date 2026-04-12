@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import OfferDetailSheet from './OfferDetailSheet'
 
-export default function SpecialOffersAllSheet({ isOpen, onClose, offers }) {
+export default function SpecialOffersAllSheet({ isOpen, onClose, offers, onMicroloanReceive, initialOfferId = null }) {
   const [isClosing, setIsClosing] = useState(false)
   const [detail, setDetail] = useState(null)
 
   useEffect(() => {
-    if (isOpen) { setIsClosing(false); setDetail(null) }
-  }, [isOpen])
+    if (!isOpen) return
+    setIsClosing(false)
+    if (initialOfferId) {
+      const o = offers.find((x) => x.id === initialOfferId)
+      setDetail(o || null)
+    } else {
+      setDetail(null)
+    }
+  }, [isOpen, initialOfferId, offers])
 
   const requestClose = useCallback(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { onClose(); return }
@@ -85,7 +92,11 @@ export default function SpecialOffersAllSheet({ isOpen, onClose, offers }) {
           </div>
         </div>
       </div>
-      <OfferDetailSheet offer={detail} onClose={() => setDetail(null)} />
+      <OfferDetailSheet
+        offer={detail}
+        onClose={() => setDetail(null)}
+        onMicroloanReceive={onMicroloanReceive}
+      />
     </>
   )
 }

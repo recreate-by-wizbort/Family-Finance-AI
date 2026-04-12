@@ -1,7 +1,15 @@
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY
-const MODEL = 'nvidia/nemotron-3-super-120b-a12b:free'
-const API_URL = 'https://openrouter.ai/api/v1/chat/completions'
-const MAX_TOKENS = 600
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''
+const AI_PROVIDER_RAW = (import.meta.env.VITE_AI_PROVIDER || '').toLowerCase().trim()
+
+const OPENROUTER_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free'
+const GEMINI_MODEL = 'gemini-flash-latest'
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const GEMINI_GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent`
+
+/** Достаточно для связного ответа на русском; 600 часто обрывало фразу на середине. */
+const MAX_TOKENS = 1536
 const TEMPERATURE = 0.6
 const TOP_P = 0.9
 const REASONING_CONFIG = {
@@ -10,13 +18,46 @@ const REASONING_CONFIG = {
   exclude: true,
 }
 
-function ensureApiKey() {
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('Не найден VITE_OPENROUTER_API_KEY. Добавьте ключ в .env и перезапустите dev-сервер.')
+/** @returns {'gemini' | 'openrouter'} */
+export function getActiveAiProvider() {
+  if (AI_PROVIDER_RAW === 'openrouter') return 'openrouter'
+  if (AI_PROVIDER_RAW === 'gemini') return 'gemini'
+  if (GEMINI_API_KEY) return 'gemini'
+  return 'openrouter'
+}
+
+export const MODEL = getActiveAiProvider() === 'gemini' ? GEMINI_MODEL : OPENROUTER_MODEL
+
+/** Значения HTTP-заголовков — только ByteString (Latin-1); кириллица в ключе даёт ошибку fetch. */
+function assertAsciiApiKey(key, label) {
+  const s = String(key || '')
+  for (let i = 0; i < s.length; i += 1) {
+    if (s.charCodeAt(i) > 255) {
+      throw new Error(
+        `${label}: в ключе на позиции ${i + 1} недопустимый символ (часто кириллическая «А» вместо латинской «A» в начале ключа Google). Скопируйте ключ из консоли Google AI заново, только латиница и цифры.`,
+      )
+    }
   }
 }
 
-function buildHeaders() {
+function ensureApiKey() {
+  const p = getActiveAiProvider()
+  if (p === 'gemini') {
+    if (!GEMINI_API_KEY) {
+      throw new Error(
+        'Не найден ключ Gemini. Укажите VITE_GEMINI_API_KEY или Google_Gemini_API_KEY_1 в .env и перезапустите dev-сервер.',
+      )
+    }
+    assertAsciiApiKey(GEMINI_API_KEY, 'Ключ Gemini')
+    return
+  }
+  if (!OPENROUTER_API_KEY) {
+    throw new Error('Не найден VITE_OPENROUTER_API_KEY. Добавьте ключ в .env и перезапустите dev-сервер.')
+  }
+  assertAsciiApiKey(OPENROUTER_API_KEY, 'Ключ OpenRouter')
+}
+
+function buildOpenRouterHeaders() {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${OPENROUTER_API_KEY}`,
@@ -25,12 +66,33 @@ function buildHeaders() {
   }
 }
 
-async function parseError(response) {
+async function parseOpenRouterError(response) {
   try {
     const payload = await response.json()
     return payload?.error?.message || `Ошибка API: ${response.status}`
   } catch {
     return `Ошибка API: ${response.status}`
+  }
+}
+
+function geminiKeyHintAppendix(message) {
+  const m = String(message || '').toLowerCase()
+  if (!m.includes('api key')) return ''
+  if (!m.includes('invalid') && !m.includes('not valid')) return ''
+  return (
+    '\n\nВозможные причины: (1) в .env для Vite другой ключ, чем в curl — проверьте VITE_GEMINI_API_KEY или Google_Gemini_API_KEY_1 в каталоге family-finance-ai и перезапустите npm run dev; '
+    + '(2) в Google Cloud у ключа включено ограничение «HTTP referrer» — для локальной разработки добавьте http://localhost:5173/* (и свой порт); curl без referer такое ограничение не проверяет так же, как браузер.'
+  )
+}
+
+async function parseGeminiError(response) {
+  try {
+    const payload = await response.json()
+    const msg = payload?.error?.message || payload?.error?.status
+    const base = msg || `Ошибка Gemini: ${response.status}`
+    return base + geminiKeyHintAppendix(base)
+  } catch {
+    return `Ошибка Gemini: ${response.status}`
   }
 }
 
@@ -71,28 +133,145 @@ function buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext,
   ]
 }
 
-function extractTextFromCompletion(payload) {
+function extractTextFromOpenRouterCompletion(payload) {
   const message = payload?.choices?.[0]?.message?.content
   return normalizeTextContent(message)
 }
 
+/** @param {Array<{role: string, content: string}>} openAiMessages */
+function openAiMessagesToGeminiPayload(openAiMessages) {
+  let systemInstruction = null
+  const contents = []
+  for (const m of openAiMessages) {
+    if (m.role === 'system') {
+      systemInstruction = { parts: [{ text: String(m.content || '') }] }
+      continue
+    }
+    const role = m.role === 'assistant' ? 'model' : 'user'
+    contents.push({ role, parts: [{ text: String(m.content || '') }] })
+  }
+  const body = {
+    contents,
+    generationConfig: {
+      maxOutputTokens: MAX_TOKENS,
+      temperature: TEMPERATURE,
+      topP: TOP_P,
+    },
+  }
+  if (systemInstruction) body.systemInstruction = systemInstruction
+  return body
+}
+
+function extractGeminiText(data) {
+  const parts = data?.candidates?.[0]?.content?.parts
+  if (!Array.isArray(parts)) return ''
+  return parts.map((p) => p?.text || '').join('')
+}
+
+async function askGeminiGenerateContent(messages) {
+  const body = openAiMessagesToGeminiPayload(messages)
+  const response = await fetch(GEMINI_GENERATE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': GEMINI_API_KEY,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(await parseGeminiError(response))
+  const data = await response.json()
+  const text = extractGeminiText(data)
+  if (!text && data?.candidates?.[0]?.finishReason === 'SAFETY') {
+    throw new Error('Ответ Gemini заблокирован настройками безопасности. Переформулируйте вопрос.')
+  }
+  return text || 'Не удалось получить ответ'
+}
+
 /**
- * @param {string} systemPrompt  - полный системный промпт (роль + правила)
- * @param {string} userQuestion  - чистый вопрос пользователя
- * @param {string} budgetContext - текстовый блок с финансовыми данными
- * @param {string} yearlyContext - помесячная динамика за 12 мес.
- * @param {Array}  chatHistory   - [{role, content}]
- * @returns {AsyncGenerator<string>} стрим токенов
+ * Поток Gemini (SSE alt=sse). Документация: https://ai.google.dev/gemini-api/docs/quickstart
+ * @param {Array<{role: string, content: string}>} messages
+ */
+export async function* askGeminiStream(messages) {
+  const body = openAiMessagesToGeminiPayload(messages)
+  const url = `${GEMINI_STREAM_URL}?alt=sse`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': GEMINI_API_KEY,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(await parseGeminiError(response))
+  if (!response.body) throw new Error('Пустой поток ответа от Gemini')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let lastFull = ''
+  let yielded = 0
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim()
+      if (!line.startsWith('data:')) continue
+      const payload = line.replace(/^data:\s*/, '')
+      if (payload === '[DONE]' || !payload) continue
+      try {
+        const json = JSON.parse(payload)
+        if (json?.error) throw new Error(json.error?.message || 'Ошибка стрима Gemini')
+        const full = extractGeminiText(json)
+        if (full && full.length > lastFull.length) {
+          const delta = full.slice(lastFull.length)
+          lastFull = full
+          if (delta) {
+            yielded += delta.length
+            yield delta
+          }
+        }
+      } catch (err) {
+        if (err instanceof SyntaxError) continue
+        throw err
+      }
+    }
+  }
+
+  if (yielded === 0) {
+    const fallback = await askGeminiGenerateContent(messages)
+    if (fallback) yield fallback
+  }
+}
+
+/**
+ * @param {string} systemPrompt
+ * @param {string} userQuestion
+ * @param {string} budgetContext
+ * @param {string} yearlyContext
+ * @param {Array}  chatHistory
+ * @returns {AsyncGenerator<string>}
  */
 export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory = []) {
   ensureApiKey()
   const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
 
-  const response = await fetch(API_URL, {
+  if (getActiveAiProvider() === 'gemini') {
+    for await (const chunk of askGeminiStream(messages)) {
+      yield chunk
+    }
+    return
+  }
+
+  const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
-    headers: buildHeaders(),
+    headers: buildOpenRouterHeaders(),
     body: JSON.stringify({
-      model: MODEL,
+      model: OPENROUTER_MODEL,
       messages,
       max_tokens: MAX_TOKENS,
       temperature: TEMPERATURE,
@@ -103,7 +282,7 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
   })
 
   if (!response.ok) {
-    throw new Error(await parseError(response))
+    throw new Error(await parseOpenRouterError(response))
   }
 
   if (!response.body) {
@@ -112,16 +291,16 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
-  let buffer = ''
+  let buf = ''
   let yieldedTokens = 0
 
   while (true) {
     const { value, done } = await reader.read()
     if (done) break
 
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
+    buf += decoder.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() || ''
 
     for (const rawLine of lines) {
       const line = rawLine.trim()
@@ -142,7 +321,6 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
         }
       } catch (err) {
         if (err instanceof SyntaxError) {
-          // Skip malformed chunks
           continue
         }
         throw err
@@ -160,11 +338,15 @@ export async function askAISimple(systemPrompt, userQuestion, budgetContext, yea
   ensureApiKey()
   const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
 
-  const response = await fetch(API_URL, {
+  if (getActiveAiProvider() === 'gemini') {
+    return askGeminiGenerateContent(messages)
+  }
+
+  const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
-    headers: buildHeaders(),
+    headers: buildOpenRouterHeaders(),
     body: JSON.stringify({
-      model: MODEL,
+      model: OPENROUTER_MODEL,
       messages,
       max_tokens: MAX_TOKENS,
       temperature: TEMPERATURE,
@@ -173,10 +355,10 @@ export async function askAISimple(systemPrompt, userQuestion, budgetContext, yea
     }),
   })
 
-  if (!response.ok) throw new Error(await parseError(response))
+  if (!response.ok) throw new Error(await parseOpenRouterError(response))
 
   const data = await response.json()
-  return extractTextFromCompletion(data) || 'Не удалось получить ответ'
+  return extractTextFromOpenRouterCompletion(data) || 'Не удалось получить ответ'
 }
 
 export const SUGGESTED_QUESTIONS = [
@@ -188,4 +370,4 @@ export const SUGGESTED_QUESTIONS = [
   { id: 6, text: 'Что будет, если открыть вклад на 6 мес?', emoji: '🏦' },
 ]
 
-export { MODEL }
+export { OPENROUTER_MODEL, GEMINI_MODEL }

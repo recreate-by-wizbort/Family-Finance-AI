@@ -93,6 +93,14 @@ function App() {
           }
         />
         <Route
+          path="/advise-ai"
+          element={
+            <RequirePinRoute>
+              <AdviceAIPage />
+            </RequirePinRoute>
+          }
+        />
+        <Route
           path="/notifications"
           element={
             <RequirePinRoute>

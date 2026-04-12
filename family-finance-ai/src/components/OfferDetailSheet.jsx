@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export default function OfferDetailSheet({ offer, onClose }) {
+export default function OfferDetailSheet({ offer, onClose, onMicroloanReceive }) {
   const [isClosing, setIsClosing] = useState(false)
 
   useEffect(() => {
@@ -33,8 +33,11 @@ export default function OfferDetailSheet({ offer, onClose }) {
 
   if (!offer) return null
 
+  const isMicroloan =
+    offer.offerKind === 'microloan' && typeof onMicroloanReceive === 'function'
+
   return (
-    <div className="fixed inset-0 z-[135] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-[135] flex flex-col px-0 pt-0 sm:items-center sm:justify-center sm:p-4">
       <button
         aria-label="Закрыть"
         className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${isClosing ? 'animate-sheet-backdrop-out' : 'animate-sheet-backdrop-in'}`}
@@ -42,11 +45,18 @@ export default function OfferDetailSheet({ offer, onClose }) {
         type="button"
       />
       <div
-        className={`relative z-10 flex h-[min(80dvh,600px)] w-full max-w-full flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:max-w-lg sm:rounded-3xl ${isClosing ? 'animate-sheet-panel-out' : 'animate-sheet-panel-in'}`}
+        className={`relative z-10 mt-auto w-full max-w-full sm:mx-auto sm:mt-0 sm:max-w-lg ${isClosing ? 'animate-sheet-panel-out' : 'animate-sheet-panel-in'}`}
         onAnimationEnd={handleAnimEnd}
         role="dialog"
         aria-modal="true"
       >
+        <div
+          className={
+            isMicroloan
+              ? `flex h-[min(88dvh,calc(100dvh-env(safe-area-inset-bottom,0px)-10px))] max-h-[min(96dvh,100dvh)] w-full min-h-0 flex-col overflow-hidden rounded-t-[28px] rounded-b-none border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:h-[min(80dvh,600px)] sm:max-h-[90dvh] sm:rounded-3xl`
+              : `flex h-[min(80dvh,600px)] w-full max-h-[90dvh] flex-col overflow-hidden rounded-t-[28px] border border-[#4cd6fb]/20 bg-[#071021] shadow-2xl sm:rounded-3xl`
+          }
+        >
         <div
           className={`relative shrink-0 overflow-hidden ${offer.detailHeroClass ?? 'h-44'}`}
         >
@@ -68,8 +78,30 @@ export default function OfferDetailSheet({ offer, onClose }) {
             <h2 className="text-xl font-bold leading-tight text-[#d6e3ff]">{offer.title}</h2>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-4">
+        <div
+          className={
+            isMicroloan
+              ? 'max-h-[min(44dvh,360px)] shrink-0 overflow-y-auto overscroll-contain px-5 pb-3 pt-4'
+              : 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-4'
+          }
+        >
           <p className="text-sm leading-relaxed text-[#bcc9ce]">{offer.description}</p>
+        </div>
+        {isMicroloan ? <div className="min-h-0 flex-1" aria-hidden="true" /> : null}
+        {isMicroloan ? (
+          <div className="shrink-0 border-t border-[#1c2a41] px-5 pb-[max(1.25rem,calc(0.75rem+env(safe-area-inset-bottom,0px)))] pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                onMicroloanReceive()
+                requestClose()
+              }}
+              className="flex w-full items-center justify-center rounded-2xl bg-[#4cd6fb] py-3.5 text-sm font-bold text-[#041329] transition-opacity hover:opacity-90 active:scale-[0.99]"
+            >
+              Получить
+            </button>
+          </div>
+        ) : null}
         </div>
       </div>
     </div>
