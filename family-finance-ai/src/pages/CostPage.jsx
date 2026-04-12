@@ -19,12 +19,42 @@ import { getMergedRawMovementsForCard, withBalanceAfter } from '../utils/cardMov
 import { loadDepositCardMovements } from '../utils/depositCardMovements.js'
 import { getPaymentCardsTotalUzs } from '../utils.js'
 import {
+  getIsoWeekStartDate,
   getPeriodLabel,
   groupTransactionsByPeriod,
   PERIOD_FILTER_OPTIONS,
 } from '../utils/periodGrouping.js'
 import { isMobileDevice } from '../utils/isMobileDevice.js'
 import { isSessionUnlocked } from '../utils/sessionLock.js'
+
+function getPeriodEndDate(periodKey, periodMode) {
+  if (periodMode === 'year') {
+    return new Date(Number(periodKey), 11, 31, 23, 59, 59, 999)
+  }
+  if (periodMode === 'week') {
+    const [yearPart, weekPartRaw] = periodKey.split('-W')
+    const start = getIsoWeekStartDate(Number(yearPart), Number(weekPartRaw))
+    const end = new Date(start)
+    end.setUTCDate(start.getUTCDate() + 6)
+    end.setHours(23, 59, 59, 999)
+    return end
+  }
+  const [year, month] = periodKey.split('-').map(Number)
+  return new Date(year, month, 0, 23, 59, 59, 999)
+}
+
+function computeHistoricalBalance(currentBalance, periodEnd, allUserTransactions) {
+  const now = new Date()
+  if (periodEnd >= now) return currentBalance
+  const netInflowAfter = allUserTransactions.reduce((sum, tx) => {
+    if (new Date(tx.timestamp) <= periodEnd) return sum
+    const amount = Math.abs(Number(tx.amountUzs) || 0)
+    if (tx.direction === 'in') return sum + amount
+    if (tx.direction === 'out') return sum - amount
+    return sum
+  }, 0)
+  return Math.max(0, currentBalance - netInflowAfter)
+}
 
 const HISTORY_SHEET_ANIM_MS = 320
 const HISTORY_SHEET_SWIPE_CLOSE_PX = 100
@@ -1165,10 +1195,13 @@ export default function CostPage({
       const totalsNoTf = aggregateMonitoringOutflow(transactionsNoTf)
       const totalsCredit = aggregateMonitoringInflow(incomeTransactionsForPeriod)
       const selectedUserIds = resolveMonitoringUserIds(accountFilterId, filterByFamilyMember)
-      const cardBalance = selectedUserIds.reduce(
+      const currentBalance = selectedUserIds.reduce(
         (sum, userId) => sum + getPaymentCardsTotalUzs(userId, ACCOUNTS, LINKED_EXTERNAL_CARDS),
         0,
       )
+      const periodEnd = getPeriodEndDate(periodKey, periodMode)
+      const allUserTxs = TRANSACTIONS.filter((tx) => selectedUserIds.includes(tx.userId))
+      const cardBalance = computeHistoricalBalance(currentBalance, periodEnd, allUserTxs)
 
       const categoryUnion = new Set([
         ...Object.keys(totalsNoTf).filter((k) => totalsNoTf[k] > 0),
@@ -1239,6 +1272,8 @@ export default function CostPage({
     groupedIncomeByPeriod,
     periodMode,
     isUnlocked,
+    accountFilterId,
+    filterByFamilyMember,
   ])
 
   const selectedSnapshot =

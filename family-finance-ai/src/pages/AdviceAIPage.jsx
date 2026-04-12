@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { askAI } from '../api'
+import { askAI, initApiKeyPool } from '../api'
 import AppBottomNav from '../components/AppBottomNav'
 import AppTopBar from '../components/AppTopBar'
 import SubpageCloseButton from '../components/SubpageCloseButton'
@@ -875,7 +875,8 @@ export default function AdviceAIPage() {
   const navigate = useNavigate()
   const chatEndRef = useRef(null)
 
-  // Restore saved session
+  useEffect(() => { initApiKeyPool() }, [])
+
   const savedState = useRef(loadChatState())
 
   // Scope & period
@@ -1189,8 +1190,8 @@ export default function AdviceAIPage() {
       } else {
         setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: merged }])
       }
-    } catch (err) {
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: `Ошибка: ${err?.message || 'попробуйте позже'}` }])
+    } catch {
+      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: 'К сожалению, не удалось получить ответ. Попробуйте повторить вопрос через несколько секунд.' }])
     } finally {
       setIsLoading(false)
     }

@@ -1,17 +1,37 @@
-const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''
-const AI_PROVIDER_RAW = (import.meta.env.VITE_AI_PROVIDER || '').toLowerCase().trim()
+// ─── Collect all API keys from env ─────────────────────────────────────────────
+
+function collectOpenRouterKeys() {
+  const keys = []
+  for (let i = 1; i <= 20; i++) {
+    const key = import.meta.env[`VITE_OPENROUTER_API_KEY_${i}`]
+    if (key) keys.push(key)
+  }
+  const legacy = import.meta.env.VITE_OPENROUTER_API_KEY
+  if (legacy && !keys.includes(legacy)) keys.unshift(legacy)
+  return keys
+}
+
+function collectGeminiKeys() {
+  const keys = []
+  for (let i = 1; i <= 20; i++) {
+    const key = import.meta.env[`VITE_GEMINI_API_KEY_${i}`]
+    if (key) keys.push(key)
+  }
+  const legacy = import.meta.env.VITE_GEMINI_API_KEY
+  if (legacy && !keys.includes(legacy)) keys.unshift(legacy)
+  return keys
+}
+
+const ALL_OPENROUTER_KEYS = collectOpenRouterKeys()
+const ALL_GEMINI_KEYS = collectGeminiKeys()
 
 const OPENROUTER_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free'
-/** Стабильный Flash; `gemini-flash-latest` иногда резолвится в превью с артефактами. Переопределение: VITE_GEMINI_MODEL */
 const GEMINI_MODEL = String(import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash').trim() || 'gemini-2.5-flash'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const GEMINI_GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent`
 
-/** Потолок длины ответа (completion). Лаконичность задаётся системным промптом; высокий лимит уменьшает обрывы на середине фразы. */
 export const MAX_AI_OUTPUT_TOKENS = 10_000
-/** Gemini: запрашиваем тот же потолок; при ошибке лимита см. логи API. */
 const MAX_TOKENS_GEMINI = MAX_AI_OUTPUT_TOKENS
 const MAX_TOKENS_OPENROUTER = MAX_AI_OUTPUT_TOKENS
 const TEMPERATURE = 0.55
@@ -22,17 +42,112 @@ const REASONING_CONFIG = {
   exclude: true,
 }
 
+// ─── API Key Pool ──────────────────────────────────────────────────────────────
+
+let _workingOpenRouterKeys = []
+let _workingGeminiKeys = []
+let _poolInitialized = false
+let _poolInitPromise = null
+
+async function pingOpenRouterKey(key) {
+  try {
+    const resp = await fetch('https://openrouter.ai/api/v1/auth/key', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    return resp.ok
+  } catch {
+    return false
+  }
+}
+
+async function pingGeminiKey(key) {
+  try {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+      { method: 'GET', signal: AbortSignal.timeout(8000) },
+    )
+    return resp.ok
+  } catch {
+    return false
+  }
+}
+
+export async function initApiKeyPool() {
+  if (_poolInitialized) return { openrouter: _workingOpenRouterKeys.length, gemini: _workingGeminiKeys.length }
+  if (_poolInitPromise) return _poolInitPromise
+
+  _poolInitPromise = (async () => {
+    const [orResults, gemResults] = await Promise.all([
+      Promise.all(
+        ALL_OPENROUTER_KEYS.map(async (key) => ({ key, ok: await pingOpenRouterKey(key) })),
+      ),
+      Promise.all(
+        ALL_GEMINI_KEYS.map(async (key) => ({ key, ok: await pingGeminiKey(key) })),
+      ),
+    ])
+
+    _workingOpenRouterKeys = orResults.filter((r) => r.ok).map((r) => r.key)
+    _workingGeminiKeys = gemResults.filter((r) => r.ok).map((r) => r.key)
+
+    _poolInitialized = true
+    _poolInitPromise = null
+
+    return { openrouter: _workingOpenRouterKeys.length, gemini: _workingGeminiKeys.length }
+  })()
+
+  return _poolInitPromise
+}
+
+export function getPoolStatus() {
+  return {
+    initialized: _poolInitialized,
+    openrouter: _workingOpenRouterKeys.length,
+    gemini: _workingGeminiKeys.length,
+    total: _workingOpenRouterKeys.length + _workingGeminiKeys.length,
+  }
+}
+
+function pickRandomKey(pool) {
+  if (pool.length === 0) return null
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+function removeFromPool(key, provider) {
+  if (provider === 'gemini') {
+    _workingGeminiKeys = _workingGeminiKeys.filter((k) => k !== key)
+  } else {
+    _workingOpenRouterKeys = _workingOpenRouterKeys.filter((k) => k !== key)
+  }
+}
+
+function chooseProvider() {
+  if (_workingGeminiKeys.length > 0 && _workingOpenRouterKeys.length > 0) {
+    const AI_PROVIDER_RAW = (import.meta.env.VITE_AI_PROVIDER || '').toLowerCase().trim()
+    if (AI_PROVIDER_RAW === 'openrouter') return 'openrouter'
+    if (AI_PROVIDER_RAW === 'gemini') return 'gemini'
+    return 'gemini'
+  }
+  if (_workingGeminiKeys.length > 0) return 'gemini'
+  if (_workingOpenRouterKeys.length > 0) return 'openrouter'
+  return 'gemini'
+}
+
 /** @returns {'gemini' | 'openrouter'} */
 export function getActiveAiProvider() {
+  if (_poolInitialized) return chooseProvider()
+  const AI_PROVIDER_RAW = (import.meta.env.VITE_AI_PROVIDER || '').toLowerCase().trim()
   if (AI_PROVIDER_RAW === 'openrouter') return 'openrouter'
   if (AI_PROVIDER_RAW === 'gemini') return 'gemini'
-  if (GEMINI_API_KEY) return 'gemini'
+  if (ALL_GEMINI_KEYS.length > 0) return 'gemini'
   return 'openrouter'
 }
 
 export const MODEL = getActiveAiProvider() === 'gemini' ? GEMINI_MODEL : OPENROUTER_MODEL
 
-/** Значения HTTP-заголовков — только ByteString (Latin-1); кириллица в ключе даёт ошибку fetch. */
+// ─── Request helpers ───────────────────────────────────────────────────────────
+
 function assertAsciiApiKey(key, label) {
   const s = String(key || '')
   for (let i = 0; i < s.length; i += 1) {
@@ -44,27 +159,10 @@ function assertAsciiApiKey(key, label) {
   }
 }
 
-function ensureApiKey() {
-  const p = getActiveAiProvider()
-  if (p === 'gemini') {
-    if (!GEMINI_API_KEY) {
-      throw new Error(
-        'Не найден ключ Gemini. Укажите VITE_GEMINI_API_KEY или Google_Gemini_API_KEY_1 в .env и перезапустите dev-сервер.',
-      )
-    }
-    assertAsciiApiKey(GEMINI_API_KEY, 'Ключ Gemini')
-    return
-  }
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('Не найден VITE_OPENROUTER_API_KEY. Добавьте ключ в .env и перезапустите dev-сервер.')
-  }
-  assertAsciiApiKey(OPENROUTER_API_KEY, 'Ключ OpenRouter')
-}
-
-function buildOpenRouterHeaders() {
+function buildOpenRouterHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+    Authorization: `Bearer ${apiKey}`,
     'HTTP-Referer': window.location.origin,
     'X-Title': 'Family Finance AI',
   }
@@ -142,7 +240,6 @@ function extractTextFromOpenRouterCompletion(payload) {
   return normalizeTextContent(message)
 }
 
-/** @param {Array<{role: string, content: string}>} openAiMessages */
 function openAiMessagesToGeminiPayload(openAiMessages) {
   let systemInstruction = null
   const contents = []
@@ -159,7 +256,6 @@ function openAiMessagesToGeminiPayload(openAiMessages) {
     temperature: TEMPERATURE,
     topP: TOP_P,
   }
-  // Только 2.5+/3: иначе лишний ключ может дать 400 на старых model id
   if (/gemini-2\.5|gemini-3/i.test(GEMINI_MODEL)) {
     generationConfig.thinkingConfig = { thinkingBudget: 0 }
   }
@@ -180,13 +276,16 @@ function extractGeminiText(data) {
     .join('')
 }
 
-async function askGeminiGenerateContent(messages) {
+// ─── Single-key request functions ──────────────────────────────────────────────
+
+async function askGeminiGenerateContentWithKey(messages, apiKey) {
+  assertAsciiApiKey(apiKey, 'Ключ Gemini')
   const body = openAiMessagesToGeminiPayload(messages)
   const response = await fetch(GEMINI_GENERATE_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-goog-api-key': GEMINI_API_KEY,
+      'x-goog-api-key': apiKey,
     },
     body: JSON.stringify(body),
   })
@@ -199,18 +298,15 @@ async function askGeminiGenerateContent(messages) {
   return text || 'Не удалось получить ответ'
 }
 
-/**
- * Поток Gemini (SSE alt=sse). Документация: https://ai.google.dev/gemini-api/docs/quickstart
- * @param {Array<{role: string, content: string}>} messages
- */
-export async function* askGeminiStream(messages) {
+async function* askGeminiStreamWithKey(messages, apiKey) {
+  assertAsciiApiKey(apiKey, 'Ключ Gemini')
   const body = openAiMessagesToGeminiPayload(messages)
   const url = `${GEMINI_STREAM_URL}?alt=sse`
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-goog-api-key': GEMINI_API_KEY,
+      'x-goog-api-key': apiKey,
     },
     body: JSON.stringify(body),
   })
@@ -240,7 +336,6 @@ export async function* askGeminiStream(messages) {
         if (json?.error) throw new Error(json.error?.message || 'Ошибка стрима Gemini')
         const full = extractGeminiText(json)
         if (!full) continue
-        // Только монотонное наращивание префикса — иначе slice() даёт «слипшийся» мусор при рассинхроне чанков
         if (lastFull && full.startsWith(lastFull)) {
           const delta = full.slice(lastFull.length)
           lastFull = full
@@ -263,33 +358,35 @@ export async function* askGeminiStream(messages) {
   }
 
   if (yielded === 0) {
-    const fallback = await askGeminiGenerateContent(messages)
+    const fallback = await askGeminiGenerateContentWithKey(messages, apiKey)
     if (fallback) yield fallback
   }
 }
 
-/**
- * @param {string} systemPrompt
- * @param {string} userQuestion
- * @param {string} budgetContext
- * @param {string} yearlyContext
- * @param {Array}  chatHistory
- * @returns {AsyncGenerator<string>}
- */
-export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory = []) {
-  ensureApiKey()
-  const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
-
-  if (getActiveAiProvider() === 'gemini') {
-    // Один цельный ответ без SSE — меньше артефактов склейки, чем у streamGenerateContent + дельт
-    const fullText = await askGeminiGenerateContent(messages)
-    if (fullText) yield fullText
-    return
-  }
-
+async function askOpenRouterSimpleWithKey(messages, apiKey) {
+  assertAsciiApiKey(apiKey, 'Ключ OpenRouter')
   const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
-    headers: buildOpenRouterHeaders(),
+    headers: buildOpenRouterHeaders(apiKey),
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages,
+      max_tokens: MAX_TOKENS_OPENROUTER,
+      temperature: TEMPERATURE,
+      top_p: TOP_P,
+      reasoning: REASONING_CONFIG,
+    }),
+  })
+  if (!response.ok) throw new Error(await parseOpenRouterError(response))
+  const data = await response.json()
+  return extractTextFromOpenRouterCompletion(data) || 'Не удалось получить ответ'
+}
+
+async function* askOpenRouterStreamWithKey(messages, apiKey) {
+  assertAsciiApiKey(apiKey, 'Ключ OpenRouter')
+  const response = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: buildOpenRouterHeaders(apiKey),
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
       messages,
@@ -301,13 +398,8 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
     }),
   })
 
-  if (!response.ok) {
-    throw new Error(await parseOpenRouterError(response))
-  }
-
-  if (!response.body) {
-    throw new Error('Пустой поток ответа от OpenRouter')
-  }
+  if (!response.ok) throw new Error(await parseOpenRouterError(response))
+  if (!response.body) throw new Error('Пустой поток ответа от OpenRouter')
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -331,55 +423,116 @@ export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyCo
 
       try {
         const json = JSON.parse(payload)
-        if (json?.error) {
-          throw new Error(json.error?.message || 'Ошибка стрима OpenRouter')
-        }
+        if (json?.error) throw new Error(json.error?.message || 'Ошибка стрима OpenRouter')
         const token = normalizeTextContent(json?.choices?.[0]?.delta?.content)
         if (token) {
           yieldedTokens += token.length
           yield token
         }
       } catch (err) {
-        if (err instanceof SyntaxError) {
-          continue
-        }
+        if (err instanceof SyntaxError) continue
         throw err
       }
     }
   }
 
   if (yieldedTokens === 0) {
-    const fallback = await askAISimple(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
+    const fallback = await askOpenRouterSimpleWithKey(messages, apiKey)
     if (fallback) yield fallback
   }
 }
 
-export async function askAISimple(systemPrompt, userQuestion, budgetContext, yearlyContext = '', chatHistory = []) {
-  ensureApiKey()
-  const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
+// ─── Pool-aware request with transparent retry ─────────────────────────────────
 
-  if (getActiveAiProvider() === 'gemini') {
-    return askGeminiGenerateContent(messages)
+function buildAllCandidates() {
+  const candidates = []
+  const shuffled = (arr) => [...arr].sort(() => Math.random() - 0.5)
+  const preferred = chooseProvider()
+  if (preferred === 'gemini') {
+    for (const key of shuffled(_workingGeminiKeys)) candidates.push({ provider: 'gemini', key })
+    for (const key of shuffled(_workingOpenRouterKeys)) candidates.push({ provider: 'openrouter', key })
+  } else {
+    for (const key of shuffled(_workingOpenRouterKeys)) candidates.push({ provider: 'openrouter', key })
+    for (const key of shuffled(_workingGeminiKeys)) candidates.push({ provider: 'gemini', key })
+  }
+  if (candidates.length === 0) {
+    for (const key of ALL_GEMINI_KEYS) candidates.push({ provider: 'gemini', key })
+    for (const key of ALL_OPENROUTER_KEYS) candidates.push({ provider: 'openrouter', key })
+  }
+  return candidates
+}
+
+/**
+ * @param {string} systemPrompt
+ * @param {string} userQuestion
+ * @param {string} budgetContext
+ * @param {string} yearlyContext
+ * @param {Array}  chatHistory
+ * @returns {AsyncGenerator<string>}
+ */
+export async function* askAI(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory = []) {
+  const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
+  const candidates = buildAllCandidates()
+
+  if (candidates.length === 0) {
+    yield 'Не удалось подключиться к AI. Ни один ключ не настроен.'
+    return
   }
 
-  const response = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: buildOpenRouterHeaders(),
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      messages,
-      max_tokens: MAX_TOKENS_OPENROUTER,
-      temperature: TEMPERATURE,
-      top_p: TOP_P,
-      reasoning: REASONING_CONFIG,
-    }),
-  })
-
-  if (!response.ok) throw new Error(await parseOpenRouterError(response))
-
-  const data = await response.json()
-  return extractTextFromOpenRouterCompletion(data) || 'Не удалось получить ответ'
+  for (let i = 0; i < candidates.length; i++) {
+    const { provider, key } = candidates[i]
+    try {
+      if (provider === 'gemini') {
+        const fullText = await askGeminiGenerateContentWithKey(messages, key)
+        if (fullText) {
+          yield fullText
+          return
+        }
+      } else {
+        let hasTokens = false
+        for await (const token of askOpenRouterStreamWithKey(messages, key)) {
+          hasTokens = true
+          yield token
+        }
+        if (hasTokens) return
+      }
+    } catch {
+      removeFromPool(key, provider)
+      if (i === candidates.length - 1) {
+        yield 'К сожалению, не удалось получить ответ. Попробуйте повторить вопрос через несколько секунд.'
+        return
+      }
+    }
+  }
 }
+
+export async function askAISimple(systemPrompt, userQuestion, budgetContext, yearlyContext = '', chatHistory = []) {
+  const messages = buildMessages(systemPrompt, userQuestion, budgetContext, yearlyContext, chatHistory)
+  const candidates = buildAllCandidates()
+
+  if (candidates.length === 0) {
+    return 'Не удалось подключиться к AI. Ни один ключ не настроен.'
+  }
+
+  for (let i = 0; i < candidates.length; i++) {
+    const { provider, key } = candidates[i]
+    try {
+      if (provider === 'gemini') {
+        return await askGeminiGenerateContentWithKey(messages, key)
+      }
+      return await askOpenRouterSimpleWithKey(messages, key)
+    } catch {
+      removeFromPool(key, provider)
+      if (i === candidates.length - 1) {
+        return 'К сожалению, не удалось получить ответ. Попробуйте повторить вопрос через несколько секунд.'
+      }
+    }
+  }
+  return 'Не удалось получить ответ'
+}
+
+// Legacy streaming export for compatibility
+export { askGeminiStreamWithKey as askGeminiStream }
 
 export const SUGGESTED_QUESTIONS = [
   { id: 1, text: 'Почему мы тратим больше в этом месяце?', emoji: '📈' },
